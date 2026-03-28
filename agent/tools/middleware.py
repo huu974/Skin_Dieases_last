@@ -1,3 +1,7 @@
+"""
+中间件相关功能
+"""
+
 from typing import Callable
 from utils.logger import logger
 from langchain.tools.tool_node import ToolCallRequest

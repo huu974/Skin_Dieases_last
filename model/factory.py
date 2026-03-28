@@ -1,7 +1,6 @@
 """
 使用抽象工厂模式创建和管理聊天模型和嵌入模型的实例，支持阿里云通义千问系列模型
 """
-
 # 导入抽象基类，用于定义工厂接口
 from abc import ABC, abstractmethod
 from typing import Optional
@@ -10,6 +9,8 @@ from langchain_community.chat_models.tongyi import BaseChatModel
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_community.chat_models.tongyi import ChatTongyi
 from utils.config_handler import rag_conf
+
+
 
 
 #定义抽象模型工厂基类

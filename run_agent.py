@@ -6,7 +6,7 @@ import os
 import json
 from agent.react_agent import SkinDiagnosisAgent
 from utils.logger import logger
-
+ 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 HISTORY_FILE = "conversation_history.json"
@@ -96,6 +96,6 @@ if __name__ == '__main__':
     main()
     print()
     print("=" * 50)
-    print("⚠️ 免责声明：以上结果仅供参考，不能替代专业医生诊断。")
+    print("免责声明：以上结果仅供参考，不能替代专业医生诊断。")
     print("   如有疑虑，请及时就医。")
     print("=" * 50)

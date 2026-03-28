@@ -1,3 +1,6 @@
+"""
+皮肤病诊断智能体
+"""
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from model.factory import chat_model
 from utils.prompt_loader import load_system_prompts

@@ -27,17 +27,16 @@ rag_service = None
 
 
 
-"""延迟加载YOLO服务"""
+"""加载YOLO服务"""
 def get_yolo_service():
     global yolo_service
     if yolo_service is None:
         yolo_service = YOLOv10Detector(model_size='n')
-        yolo_service.model = YOLO("E:\\py项目\\Skin diseases\\runs\\detect\\runs\\detect\\train1\\train5\\weights\\best.pt")
-    return yolo_service
+        yolo_service.model = YOLO("runs/detect/runs/detect/train1/train5/weights/best.pt")
 
 
 
-"""延迟加载分类模型"""
+"""加载分类模型"""
 def get_classifier_model():
     global classifier_model
     if classifier_model is None:
@@ -46,15 +45,15 @@ def get_classifier_model():
         
 
         xiaohui = MyModel(model=model, num_classes=model_conf["num_classes"])
-        classifier_model = xiaohui.model_classsifier()
-        checkpoint = torch.load("E:\\py项目\\Skin diseases\\variables\\best_model.pth.tar",map_location="cpu")
+        classifier_model = xiaohui.model_classifier()
+        checkpoint = torch.load("variables/best_model.pth.tar",map_location="cpu")
         classifier_model.load_state_dict(checkpoint["model_state_dict"])
         classifier_model.eval()
     return classifier_model
 
 
 
-"""延迟加载RAG服务"""
+"""加载RAG服务"""
 def get_rag_service():
     global rag_service
     if rag_service is None:
@@ -63,14 +62,16 @@ def get_rag_service():
 
 
 # 皮肤病类别标签
-SKIN_DISEASE_CLASSES = [
-    "光化性角化病", "基底细胞癌", "黑色素瘤", "痣", "皮肤纤维瘤",
-    "血管病变", "脂溢性角化病", "脂溢性皮炎", "粟丘疹", "皮脂腺痣",
-    "疣", "寻常痤疮", "银屑病", "扁平苔藓", "花斑癣", "白癜风",
-    "疖疮", "念珠菌病", "体虱", "传染性软疣", "甲真菌病", 
-    "系统性疾病的皮肤表现", "其他皮肤病"
+SKIN_DISEASE_CLASSES= [
+"痤疮和酒渣鼻","光化性角化病和基底细胞癌","特应性皮炎",
+"大疱性疾病","蜂窝组织炎和细菌感染","湿疹",
+"发疹和药物性皮炎","脱发","疱疹/HPV",
+"色素性疾病","红斑狼疮","黑色素瘤和痣",
+"甲真菌病","毒葛皮炎","银屑病和扁平苔藓",
+"疥疮和莱姆病","脂溢性角化病和良性肿瘤","系统性疾病",
+"真菌感染","荨麻疹","血管瘤",
+"血管炎","疣和传染性软疣"
 ]
-
 
 @tool(description="使用YOLO模型检测皮肤图像中的皮损区域，返回是否检测到异常皮损")
 def yolo_detect(image_path: str) -> str:

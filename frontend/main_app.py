@@ -1,9 +1,13 @@
+"""
+streamlit主入口页面
+"""
+
 import streamlit as st
 from datetime import datetime
 
 st.set_page_config(
     page_title="皮肤病智能诊断系统",
-    page_icon="🏥",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -130,16 +134,16 @@ def get_last_diagnosis_display():
 with st.sidebar:
     st.markdown("""
     <div style="text-align: center; padding: 20px 0;">
-        <h2 style="color: #667eea;">🏥 MedSkin</h2>
+        <h2 style="color: #667eea;"> MedSkin</h2>
         <p style="color: #888; font-size: 12px;">皮肤病智能诊断</p>
     </div>
     """, unsafe_allow_html=True)
     
     st.markdown("---")
     
-    with st.expander("⚙️ 设置", expanded=True):
+    with st.expander(" 设置", expanded=True):
         theme_options = ["light", "dark"]
-        theme_labels = {"light": "☀️ 浅色模式", "dark": "🌙 深色模式"}
+        theme_labels = {"light": " 浅色模式", "dark": " 深色模式"}
         selected_theme = st.selectbox(
             "主题模式",
             theme_options,
@@ -167,9 +171,9 @@ with st.sidebar:
     st.markdown(f"""
     <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                 padding: 15px; border-radius: 10px; text-align: center;">
-        <p style="color: white; margin: 0;">👤 {st.session_state['user_info']['name']}</p>
+        <p style="color: white; margin: 0;"> {st.session_state['user_info']['name']}</p>
         <p style="color: rgba(255,255,255,0.8); font-size: 11px; margin: 5px 0 0 0;">
-            📧 {st.session_state['user_info']['email'] or '未设置邮箱'}
+             {st.session_state['user_info']['email'] or '未设置邮箱'}
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -185,7 +189,7 @@ with col2:
         <h1 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
                    font-size: 42px; margin-bottom: 10px;">
-            🏥 {get_text('welcome')}
+             {get_text('welcome')}
         </h1>
         <p style="color: #666; font-size: 18px;">{get_text('subtitle')}</p>
     </div>
@@ -197,17 +201,17 @@ st.subheader(get_text('quick_stats'))
 stats_col1, stats_col2, stats_col3, stats_col4 = st.columns(4)
 
 with stats_col1:
-    st.metric(f"📊 {get_text('total_diagnoses')}", st.session_state["diagnosis_count"], "↑ 1")
+    st.metric(f" {get_text('total_diagnoses')}", st.session_state["diagnosis_count"], "↑ 1")
 with stats_col2:
-    st.metric(f"🎯 {get_text('accuracy')}", f"{st.session_state['accuracy']:.1f}%" if st.session_state["accuracy"] > 0 else "--", "+0.5%")
+    st.metric(f" {get_text('accuracy')}", f"{st.session_state['accuracy']:.1f}%" if st.session_state["accuracy"] > 0 else "--", "+0.5%")
 with stats_col3:
     disease_count = len(SKIN_DISEASES)
-    st.metric(f"🦠 {get_text('supported_diseases')}", disease_count)
-    with st.expander(f"📋 {get_text('click_to_view')}"):
+    st.metric(f" {get_text('supported_diseases')}", disease_count)
+    with st.expander(f" {get_text('click_to_view')}"):
         for i, (cn_name, en_name) in enumerate(SKIN_DISEASES, 1):
             st.write(f"{i}. {cn_name} ({en_name})")
 with stats_col4:
-    st.metric(f"🕐 {get_text('last_diagnosis')}", get_last_diagnosis_display())
+    st.metric(f" {get_text('last_diagnosis')}", get_last_diagnosis_display())
 
 st.markdown("---")
 
@@ -215,10 +219,10 @@ st.subheader(get_text('features'))
 feature_cols = st.columns(4)
 
 features = [
-    ("📷", get_text('image_analysis'), get_text('image_desc'), "1_诊断分析"),
-    ("💬", get_text('chat'), get_text('chat_desc'), "2_智能对话"),
-    ("📋", get_text('history'), get_text('history_desc'), "3_历史记录"),
-    ("🛡️", get_text('prevention'), get_text('prevention_desc'), "4_预防建议"),
+    ("", get_text('image_analysis'), get_text('image_desc'), "诊断分析"),
+    ("", get_text('chat'), get_text('chat_desc'), "智能对话"),
+    ("", get_text('history'), get_text('history_desc'), "历史记录"),
+    ("️", get_text('prevention'), get_text('prevention_desc'), "预防建议"),
 ]
 
 for i, (icon, title, desc, page) in enumerate(features):
@@ -239,14 +243,14 @@ for i, (icon, title, desc, page) in enumerate(features):
 st.markdown("---")
 
 st.subheader(get_text('latest_news'))
-with st.expander("🆕 v2.1.0 - 新增多图对比功能", expanded=True):
-    st.success("✅ 支持同时上传多张图片进行对比分析")
-    st.success("✅ 新增进度指示器，实时显示诊断步骤")
-    st.success("✅ 支持中英文切换")
+with st.expander("多图对比功能", expanded=True):
+    st.success(" 支持同时上传多张图片进行对比分析")
+    st.success(" 新增进度指示器，实时显示诊断步骤")
+    st.success(" 支持中英文切换")
 
-with st.expander("🆕 v2.0.0 - 全新UI界面"):
-    st.info("🌟 现代化科技风格设计")
-    st.info("🌙 支持深色模式切换")
+with st.expander("UI界面"):
+    st.info(" 现代化科技风格设计")
+    st.info(" 支持深色模式切换")
 
 st.markdown("---")
 st.markdown("""

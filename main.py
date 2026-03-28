@@ -18,9 +18,6 @@ from model.PanDerm import MyModel
 from train_validation import tra_val
 from utils.outputwriter import OutputSave
 from utils.writer import init_writer
-import tqdm
-from tqdm import tqdm
-
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -57,7 +54,7 @@ def main():
     os.environ['TORCH_HOME'] = model_conf["save_path"]
     model = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
     xiaohui = MyModel(model=model,  num_classes=model_conf["num_classes"])
-    model = xiaohui.model_classsifier().to(device)
+    model = xiaohui.model_classifier().to(device)
 
     # 损失函数
     criterion = nn.CrossEntropyLoss()

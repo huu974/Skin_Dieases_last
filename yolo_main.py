@@ -13,7 +13,7 @@ from model.yolo_detector import YOLOv10Detector
 from utils.config_handler import yolov10
 from utils.arguments import parse_yolo
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+from datetime import datetime
 
 
 class InterruptHandler:
@@ -93,7 +93,7 @@ def main():
             batch_size=16,
             lr0=1e-3,
             imgsz=640,
-            project=f'runs/detect/train{epoch + 1}',
+            project=f'runs/detect/{datetime.now().strftime("%Y%m%d-%H%M%S")}',
         )
         tra_loss = tra_results.box.loss if hasattr(tra_results.box, 'loss') else tra_results.box.mp
         tra_acc = tra_results.box.mp

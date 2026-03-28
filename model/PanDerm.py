@@ -15,7 +15,7 @@ class MyModel(nn.Module):
 
 
 
-    def model_classsifier(self):
+    def model_classifier(self):
         self.model.classifier = nn.Sequential(
             nn.Dropout(p=0.3)
             ,self.model.classifier[-1]
@@ -35,7 +35,7 @@ if __name__ == '__main__':
     os.environ['TORCH_HOME'] = model_conf["save_path"]
     model = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
     xiaohui = MyModel(model=model,  num_classes=model_conf["num_classes"])
-    xiaohui = xiaohui.model_classsifier()
+    xiaohui = xiaohui.model_classifier()
     print(f"最后层输出维度: {xiaohui.classifier[-1].out_features}")
     print("模型加载完成")
     print(xiaohui)

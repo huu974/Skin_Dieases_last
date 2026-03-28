@@ -1,3 +1,6 @@
+"""
+智能对话页面
+"""
 import streamlit as st
 import time
 import random
@@ -88,14 +91,14 @@ if prompt := st.chat_input("请描述您的皮肤问题..."):
 
 st.markdown("---")
 
-with st.expander("🖼️ 附加图片辅助诊断"):
+with st.expander(" 附加图片辅助诊断"):
     chat_image = st.file_uploader("上传图片", type=["jpg", "jpeg", "png"], key="chat_img")
     if chat_image:
         st.image(chat_image, caption="附加图片", use_container_width=True)
         st.session_state["pending_chat_image"] = chat_image.name
         st.success("图片已附加")
 
-with st.expander("💡 对话提示"):
+with st.expander(" 对话提示"):
     st.info("• 请尽可能详细描述症状（位置、时长、变化等）")
     st.info("• 上传清晰的患处图片可提高诊断准确性")
     st.info("• AI助手仅供参考，不作为正式医疗诊断")
@@ -104,7 +107,7 @@ col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
     pass
 with col2:
-    if st.button("🗑️ 清空对话", type="secondary", use_container_width=True):
+    if st.button("清空对话", type="secondary", use_container_width=True):
         st.session_state["chat_messages"] = [
             {"role": "assistant", "content": "对话已清空。请描述您遇到的皮肤问题，我会尽力为您提供帮助。"}
         ]

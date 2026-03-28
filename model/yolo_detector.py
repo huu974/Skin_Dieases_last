@@ -1,3 +1,8 @@
+"""
+YOLO检测器封装，集成训练，推理，加载
+"""
+
+import os
 import torch
 from ultralytics import YOLO
 from utils.config_handler import yolov10
@@ -90,29 +95,58 @@ class YOLOv10Detector:
 
     #保存模型
     def save(self,save_path,epoch=0):
+        # 1. 保存自己的 checkpoint（用于恢复训练）
         torch.save({
             'num_classes': self.num_classes,
-            'model':self.model.model.state_dict(),
-            'epoch':epoch
-        }
-        ,save_path)
+            'model': self.model.model.state_dict(),
+            'epoch': epoch
+        }, save_path)
+
+        # 2. 同时保存 YOLO 格式（用于推理）
+        yolo_path = save_path.replace('.pt', '_yolo.pt')
+        self.model.save(yolo_path)
 
 
     #加载模型
     def load(self, weights_path):
-        checkpoint = torch.load(weights_path, map_location=device)
-        
+        # 尝试用YOLO直接加载（适用于best.pt格式，用于推理）
+        try:
+            self.model = YOLO(weights_path)
+            return 0
+        except:
+            pass
+
+        # 如果失败，用原来的方式加载state_dict（适用于checkpoint.pt，用于恢复训练）
+        checkpoint = torch.load(weights_path, map_location=device, weights_only=False)
+
+        if 'model' not in checkpoint:
+            # 如果没有model键，说明是ultralytics格式，再用YOLO加载
+            self.model = YOLO(weights_path)
+            return 0
+
         model_state = self.model.model.state_dict()
         pretrained_state = checkpoint['model']
-        
         matched_state = {}
         for k, v in pretrained_state.items():
             if k in model_state and v.shape == model_state[k].shape:
                 matched_state[k] = v
-        
         self.model.model.load_state_dict(matched_state, strict=False)
-        
         return checkpoint.get('epoch', 0)
+        # checkpoint = torch.load(weights_path, map_location=device,weights_only=False)
+        #
+        # model_state = self.model.model.state_dict()
+        # pretrained_state = checkpoint['model']
+        #
+        # matched_state = {}
+        # for k, v in pretrained_state.items():
+        #     if k in model_state and v.shape == model_state[k].shape:
+        #         matched_state[k] = v
+        #
+        # self.model.model.load_state_dict(matched_state, strict=False)
+        #
+        # return checkpoint.get('epoch', 0)
+        self.model = YOLO(weights_path)
+        return 0
 
     #冻结层,冻结前num_layers层
     def freeze_layers(self,num_layers):

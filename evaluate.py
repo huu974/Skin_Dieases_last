@@ -1,3 +1,7 @@
+"""
+分类模型评估脚本
+"""
+
 import  os
 import torch
 import numpy as np
@@ -17,6 +21,8 @@ from torchvision.datasets import ImageFolder
 from torchvision.models import efficientnet_b3, EfficientNet_B3_Weights
 from model.PanDerm import MyModel
 from utils.config_handler import model_conf
+
+
 TEST_DATA_PATH = './archive/val'  # 验证集路径
 MODEL_PATH = './variables/best_model.pth.tar'  # 模型权重路径
 CLASSES = [
@@ -161,7 +167,7 @@ if __name__ == '__main__':
     os.environ['TORCH_HOME'] = model_conf["save_path"]
     model = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
     xiaohui = MyModel(model=model, num_classes=model_conf["num_classes"])
-    model = xiaohui.model_classsifier().to(device)
+    model = xiaohui.model_classifier().to(device)
 
     main(model)
 

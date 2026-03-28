@@ -1,8 +1,12 @@
+"""
+诊断历史记录
+"""
+
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="诊断历史", page_icon="📋", layout="wide")
+st.set_page_config(page_title="诊断历史", page_icon="", layout="wide")
 
 def apply_theme():
     if st.session_state.get("theme", "light") == "dark":
@@ -15,7 +19,7 @@ def apply_theme():
 
 apply_theme()
 
-st.title("📋 诊断历史")
+st.title(" 诊断历史")
 st.markdown("查看和管理您的历史诊断记录")
 
 if "diagnosis_results" not in st.session_state:
@@ -70,7 +74,7 @@ if records:
     for i, record in enumerate(filtered_records):
         with st.container():
             severity = record.get("severity", "中等")
-            severity_color = {"轻度": "🟢", "中等": "🟡", "重度": "🔴"}.get(severity, "⚪")
+            severity_color = {"轻度": "", "中等": "", "重度": ""}.get(severity, "⚪")
             
             st.markdown(f"""
             <div style="background: white; padding: 15px; border-radius: 10px; 
@@ -79,7 +83,7 @@ if records:
                     <div>
                         <h4 style="margin: 0; color: #333;">🦠 {record.get('disease', '未知疾病')}</h4>
                         <p style="margin: 5px 0 0 0; color: #666; font-size: 13px;">
-                            📅 {record.get('timestamp', '未知时间')} | 
+                             {record.get('timestamp', '未知时间')} | 
                             {severity_color} {severity} | 
                             置信度: {record.get('confidence', 0)}%
                         </p>
@@ -90,18 +94,18 @@ if records:
             
             col_del, _ = st.columns([1, 4])
             with col_del:
-                if st.button("🗑️ 删除", key=f"del_history_{i}"):
+                if st.button(" 删除", key=f"del_history_{i}"):
                     st.session_state["history_records"] = [
                         r for r in st.session_state["history_records"] 
                         if r.get("image_name") != record.get("image_name") or not record.get("image_name")
                     ]
                     st.rerun()
 else:
-    st.info("📭 暂无诊断记录，请先进行诊断分析")
+    st.info(" 暂无诊断记录，请先进行诊断分析")
 
 st.markdown("---")
 
-if st.button("📊 导出历史记录", type="primary", use_container_width=True):
+if st.button(" 导出历史记录", type="primary", use_container_width=True):
     if records:
         csv_data = "时间,疾病,置信度,严重程度\n"
         for r in records:
@@ -118,7 +122,7 @@ if st.button("📊 导出历史记录", type="primary", use_container_width=True
         st.warning("暂无记录可导出")
 
 if records:
-    st.markdown("### 📈 诊断趋势")
+    st.markdown("###  诊断趋势")
     
     df_records = pd.DataFrame(records)
     if "timestamp" in df_records.columns and len(df_records) > 0:

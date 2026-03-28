@@ -1,6 +1,10 @@
+"""
+预防建议页面
+"""
+
 import streamlit as st
 
-st.set_page_config(page_title="预防建议", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="预防建议", page_icon="🛡", layout="wide")
 
 def apply_theme():
     if st.session_state.get("theme", "light") == "dark":
@@ -13,12 +17,12 @@ def apply_theme():
 
 apply_theme()
 
-st.title("🛡️ 预防建议")
+st.title(" 预防建议")
 st.markdown("专业皮肤病预防和日常护理指南")
 
 categories = {
-    "🌞 日常防护": {
-        "icon": "☀️",
+    " 日常防护": {
+        "icon": "",
         "tips": [
             "避免长时间暴露在阳光下，外出时使用防晒霜",
             "保持皮肤清洁，每天洗澡但避免过热的水",
@@ -26,8 +30,8 @@ categories = {
             "保持充足的睡眠，增强免疫力"
         ]
     },
-    "🍎 饮食调理": {
-        "icon": "🥗",
+    " 饮食调理": {
+        "icon": "",
         "tips": [
             "多吃新鲜蔬菜水果，补充维生素",
             "避免辛辣、油腻、刺激性食物",
@@ -35,8 +39,8 @@ categories = {
             "保持充足的水分摄入"
         ]
     },
-    "🧘 生活习惯": {
-        "icon": "💤",
+    " 生活习惯": {
+        "icon": "",
         "tips": [
             "规律作息，避免熬夜",
             "适当运动，增强体质",
@@ -44,8 +48,8 @@ categories = {
             "穿着宽松透气的棉质衣物"
         ]
     },
-    "🔍 定期检查": {
-        "icon": "🏥",
+    " 定期检查": {
+        "icon": "",
         "tips": [
             "定期进行皮肤自查",
             "发现问题及时就医",
@@ -83,7 +87,7 @@ for tab, (category, data) in zip(tabs, categories.items()):
 
 st.markdown("---")
 
-st.subheader("🦠 常见皮肤病预防")
+st.subheader(" 常见皮肤病预防")
 
 diseases = {
     "银屑病": {
@@ -110,20 +114,20 @@ for tab, (disease, info) in zip(disease_tabs, diseases.items()):
     with tab:
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("#### 💪 预防措施")
+            st.markdown("####  预防措施")
             for tip in info["预防"]:
                 st.write(f"• {tip}")
         with col2:
-            st.markdown("#### 🥗 饮食建议")
+            st.markdown("####  饮食建议")
             for tip in info["饮食"]:
                 st.write(f"• {tip}")
 
-st.markdown("---")
+# st.markdown("---")
 
-with st.expander("📚 更多资源"):
-    st.markdown("""
-    ### 权威资源链接
-    - [中华皮肤科协会](https://www.cda.org.cn)
-    - [世界卫生组织皮肤健康](https://www.who.int/health-topics/skin-diseases)
-    - [美国皮肤病学会](https://www.aad.org)
-    """)
+# with st.expander(" 更多资源"):
+#     st.markdown("""
+#     ### 权威资源链接
+#     - [中华皮肤科协会](https://www.cda.org.cn)
+#     - [世界卫生组织皮肤健康](https://www.who.int/health-topics/skin-diseases)
+#     - [美国皮肤病学会](https://www.aad.org)
+#     """)

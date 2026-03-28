@@ -1,3 +1,7 @@
+"""
+简单的streamlit
+"""
+
 import time
 import tempfile
 import streamlit as st

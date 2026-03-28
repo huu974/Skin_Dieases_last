@@ -59,7 +59,6 @@ class tra_val(object):
 
 
         #创建指标计量器
-        self.batch_time = AverageMeter()            #批次时间
         self.losses_tr = AverageMeter()             #训练损失
         self.top1_tr = AverageMeter()               #Top-1准确率
         self.top5_tr = AverageMeter()               #Top-5准确率
@@ -131,6 +130,8 @@ class tra_val(object):
 
 
         print(f'训练完成 | Top1: {self.top1_tr.avg:.2f}% | Top5: {self.top5_tr.avg:.2f}%  | loss: {self.losses_tr.avg:.4f}')
+
+
 
     #模型验证
     def validation(self, epoch):

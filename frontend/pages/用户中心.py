@@ -1,6 +1,10 @@
+"""
+用户信息管理
+"""
+
 import streamlit as st
 
-st.set_page_config(page_title="用户中心", page_icon="👤", layout="wide")
+st.set_page_config(page_title="用户中心", page_icon="", layout="wide")
 
 def apply_theme():
     if st.session_state.get("theme", "light") == "dark":
@@ -13,7 +17,7 @@ def apply_theme():
 
 apply_theme()
 
-st.title("👤 用户中心")
+st.title(" 用户中心")
 st.markdown("管理您的个人信息和诊断偏好")
 
 if "user_info" not in st.session_state:
@@ -36,7 +40,7 @@ if "age" not in st.session_state["user_info"]:
 if "saved" not in st.session_state:
     st.session_state["saved"] = False
 
-tab1, tab2, tab3 = st.tabs(["📝 基本信息", "⚙️ 偏好设置", "🔔 通知管理"])
+tab1, tab2, tab3 = st.tabs([" 基本信息", " 偏好设置", " 通知管理"])
 
 with tab1:
     st.markdown("### 基本信息")
@@ -74,7 +78,7 @@ with tab1:
     
     col_btn, _, _ = st.columns([1, 2, 1])
     with col_btn:
-        if st.button("💾 保存修改", type="primary", use_container_width=True):
+        if st.button(" 保存修改", type="primary", use_container_width=True):
             st.session_state["user_info"]["name"] = name
             st.session_state["user_info"]["email"] = email
             st.session_state["user_info"]["phone"] = phone
@@ -83,7 +87,7 @@ with tab1:
             st.session_state["user_info"]["skin_type"] = skin_type
             st.session_state["user_info"]["allergies"] = allergies
             st.session_state["saved"] = True
-            st.success("✅ 信息已保存!")
+            st.success(" 信息已保存!")
     
     if st.session_state.get("saved"):
         st.balloons()
@@ -91,7 +95,7 @@ with tab1:
 with tab2:
     st.markdown("### 诊断偏好设置")
     
-    st.markdown("#### 🌍 语言设置")
+    st.markdown("####  语言设置")
     lang = st.radio(
         "选择语言",
         ["中文", "English"],
@@ -102,21 +106,21 @@ with tab2:
         st.session_state["language"] = lang
         st.rerun()
     
-    st.markdown("#### 🎨 界面主题")
+    st.markdown("####  界面主题")
     theme = st.radio(
         "选择主题",
-        ["☀️ 浅色模式", "🌙 深色模式"],
+        [" 浅色模式", " 深色模式"],
         index=0 if st.session_state.get("theme", "light") == "light" else 1,
         horizontal=True
     )
-    if theme == "☀️ 浅色模式" and st.session_state.get("theme") != "light":
+    if theme == " 浅色模式" and st.session_state.get("theme") != "light":
         st.session_state["theme"] = "light"
         st.rerun()
-    elif theme == "🌙 深色模式" and st.session_state.get("theme") != "dark":
+    elif theme == " 深色模式" and st.session_state.get("theme") != "dark":
         st.session_state["theme"] = "dark"
         st.rerun()
     
-    st.markdown("#### 🤖 AI诊断设置")
+    st.markdown("####  AI诊断设置")
     
     confidence_threshold = st.slider(
         "置信度阈值",
@@ -130,7 +134,7 @@ with tab2:
     
     show_similar = st.checkbox("显示相似病例参考", value=True)
     
-    if st.button("💾 保存偏好设置"):
+    if st.button(" 保存偏好设置"):
         st.success("偏好设置已保存!")
 
 with tab3:
@@ -138,7 +142,7 @@ with tab3:
     
     notifications = st.toggle("启用通知", value=st.session_state["user_info"].get("notifications", True))
     
-    st.markdown("#### 📬 通知类型")
+    st.markdown("####  通知类型")
     
     col1, col2 = st.columns(2)
     
@@ -152,7 +156,7 @@ with tab3:
     
     st.markdown("---")
     
-    st.markdown("### 📱 联系方式订阅")
+    st.markdown("###  联系方式订阅")
     
     col3, col4 = st.columns([3, 1])
     with col3:
@@ -162,24 +166,24 @@ with tab3:
     
     st.markdown("---")
     
-    st.markdown("### ⚠️ 数据管理")
+    st.markdown("###  数据管理")
     
     col_btn1, col_btn2, col_btn3 = st.columns(3)
     
     with col_btn1:
-        st.button("📥 导出我的数据", use_container_width=True)
+        st.button(" 导出我的数据", use_container_width=True)
     
     with col_btn2:
-        st.button("🔄 同步云端", use_container_width=True)
+        st.button(" 同步云端", use_container_width=True)
     
     with col_btn3:
-        st.button("🗑️ 清空本地数据", use_container_width=True)
+        st.button(" 清空本地数据", use_container_width=True)
 
-st.markdown("---")
-
-st.markdown("""
-<div style="text-align: center; color: #999; padding: 20px;">
-    <p>© 2026 MedSkin 皮肤病智能诊断系统 | 版本 v2.1.0</p>
-    <p>如有疑问，请联系 support@medskin.com</p>
-</div>
-""", unsafe_allow_html=True)
+# st.markdown("---")
+#
+# st.markdown("""
+# <div style="text-align: center; color: #999; padding: 20px;">
+#     <p>© 2026 MedSkin 皮肤病智能诊断系统 | 版本 v2.1.0</p>
+#     <p>如有疑问，请联系 support@medskin.com</p>
+# </div>
+# """, unsafe_allow_html=True)

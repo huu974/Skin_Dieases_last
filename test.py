@@ -38,18 +38,28 @@ transform = transforms.Compose([
 
 
 #1.测试分类模型
-def test_classifier(image_path):
+def test_classifier(image_path,model_name='efficientnet_b3'):
     print('开始测试分类模型...')
     device =  torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    #获取模型
-    model = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
-    xiaohui = MyModel(model=model, num_classes=model_conf["num_classes"])
-    model = xiaohui.model_classifier().to(device)
 
-    #加载训练好的模型权重
-    checkpoint = torch.load(test_evaluate_conf['classification_model'],map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
 
+    # 根据模型名称加载分类模型
+    if model_name == 'resnet50':
+        from model.ResNet50 import ResNet50Classifier
+        model = ResNet50Classifier(num_classes=model_conf["num_classes"], pretrained=False)
+    elif model_name == 'efficientnet_b3':
+        model = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
+        xiaohui = MyModel(model=model, num_classes=model_conf["num_classes"])
+        model = xiaohui.model_classifier().to(device)
+        checkpoint = torch.load(test_evaluate_conf['classification_model'], map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+
+    else:
+        raise ValueError(f"不支持的模型: {model_name}")
+
+
+    model = model.to(device)
+    print(f'使用模型：{model_name}')
     #测试开始
     model.eval()
 
@@ -75,36 +85,41 @@ def test_classifier(image_path):
 
 
 #2.测试YOLO模型
-def test_yolo(image_path):
+def test_yolo(image_path, save_box_image=None):
     print('开始测试YOLO模型...')
-    device =  torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    #加载模型
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # 加载YOLO模型
     yolo = YOLOv10Detector(model_size='n')
-    #加载训练好的模型权重
     yolo.load(test_evaluate_conf['yolo_model'])
 
-    #检测    参2：置信度阈值  意思是：只显示概率大于0.25的预测结果
-    results = yolo.predict(image_path,conf=0.25)
+    # 检测并返回坐标和带框图片
+    results, coordinates = yolo.predict_with_box(
+        image_path,
+        conf=0.25,
+        save_path=save_box_image
+    )
+
     result = results[0]
     boxes = result.boxes
 
     if boxes is not None and len(boxes) > 0:
         print(f'检测到{len(boxes)}个目标')
-        for i,box in enumerate(boxes):
+        for i, box in enumerate(boxes):
             conf = float(box.conf[0])
-            cls = int(box.cls[0])
-            print(f'区域{i+1}：类别：{test_evaluate_conf["class_names"][cls]}，置信度：{conf:.2%}')
-
+            print(f'区域{i+1}置信度：{conf:.2%}')
+        print(f'检测框坐标: {coordinates}')
     else:
         print('未检测到皮损区域')
 
+    return results, coordinates
 
-    return results
+
 
 
 
 #3.yolo+分类测试
-def test_yolo_classifier(image_path):
+def test_yolo_classifier(image_path,save_box_image,model_name='efficientnet_b3'):
     print('开始测试YOLO+分类模型...')
     device =  torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -112,27 +127,44 @@ def test_yolo_classifier(image_path):
     #加载yolo
     yolo = YOLOv10Detector(model_size='n')
     yolo.load(test_evaluate_conf['yolo_model'])
-    #检测并裁剪
-    crops,results = yolo.predict_with_crop(image_path,conf=0.25)
+    #检测并返回坐标和带框图片
+    results,coordinates = yolo.predict_with_box(
+        image_path,
+        conf=0.25,
+        save_path=save_box_image
+    )
+    result = results[0]
+    boxes = result.boxes
 
-    if not crops:
+    if boxes is None or len(boxes) == 0:
         print('未检测到皮损区域')
-        return None
+        return None, None
 
-    #加载分类模型
-    model = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
-    xiaohui = MyModel(model=model, num_classes=model_conf["num_classes"])
-    model = xiaohui.model_classifier().to(device)
-    checkpoint = torch.load(test_evaluate_conf['classification_model'],map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    #获取YOLO检测置信度
+    yolo_conf = boxes[0].conf[0].item() if boxes is not None and len(boxes) > 0 else 0
+    print(f'检测到{len(boxes)}个皮损目标，框坐标为：{coordinates}')
 
+    # 根据模型名称加载分类模型
+    if model_name == 'resnet50':
+        from model.ResNet50 import ResNet50Classifier
+        model = ResNet50Classifier(num_classes=model_conf["num_classes"], pretrained=False)
+    elif model_name == 'efficientnet_b3':
+        model = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
+        xiaohui = MyModel(model=model, num_classes=model_conf["num_classes"])
+        model = xiaohui.model_classifier().to(device)
+        checkpoint = torch.load(test_evaluate_conf['classification_model'], map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+
+    else:
+        raise ValueError(f"不支持的模型: {model_name}")
+
+
+    model = model.to(device)
+    print(f'使用模型：{model_name}')
     #测试开始
     model.eval()
-    print(f'检测到{len(crops)}个皮损区域，开始进行分类...')
+    print(f'开始分类...')
 
-    # 获取YOLO检测置信度
-    boxes = results[0].boxes
-    yolo_conf = boxes[0].conf[0].item() if boxes is not None and len(boxes) > 0 else 0
 
     # 用原图分类（而不是裁剪区域），保持和直接分类一致
     original_img = Image.open(image_path).convert('RGB')
@@ -147,7 +179,9 @@ def test_yolo_classifier(image_path):
     print(f'检测置信度：{yolo_conf:.2%}')
     print(f'分类结果：{diease}，置信度：{confidence.item():.2%}')
 
-    return results
+    return results,coordinates
+
+
 
 
 #4.随机从测试集随机选择一张图片进行测试
@@ -188,6 +222,6 @@ if __name__ == '__main__':
 
 
      #3.测试YOLO+分类模型
-     # test_yolo_classifier("HAM10000/yolo_dataset/images/val/ISIC_0024372.jpg")
-     test_yolo_classifier(test_image)
+     # test_yolo_classifier("HAM10000/yolo_dataset/images/val/ISIC_0024372.jpg", save_box_image="output.jpg")
+     test_yolo_classifier(test_image, save_box_image="output.jpg")
 

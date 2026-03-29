@@ -43,39 +43,15 @@ class YOLOv10Detector:
 
 
     #训练
-    def train(self, data_yaml, epochs, batch_size, lr0, imgsz, project):
-        # 判断是否有checkpoint
-        if self.loaded_checkpoint:
-            # 从checkpoint恢复训练
-            checkpoint = torch.load(self.loaded_checkpoint, map_location=self.device, weights_only=False)
-
-
-            # 判断是state_dict格式还是完整模型格式
-            if isinstance(checkpoint, dict) and 'model' in checkpoint:
-                # 是state_dict格式，手动加载
-                #1.获取当前模型的参数字典
-                model_state = self.model.model.state_dict()
-
-                #2.获取checkpoint的参数字典
-                pretrained_state = checkpoint['model']
-
-                #3.遍历checkpoint，找到匹配的参数
-                matched_state = {}
-
-                for k, v in pretrained_state.items():
-                    if k in model_state and v.shape == model_state[k].shape:
-                        matched_state[k] = v
-                #4.加载匹配的参数，参2：允许跳过不匹配的层
-                self.model.model.load_state_dict(matched_state, strict=False)
-            else:
-                # 是完整模型格式
-                self.model = YOLO(self.loaded_checkpoint)
-            self.loaded_checkpoint = None  # 清空，避免后续训练重复加载
+    def train(self, data_yaml, epochs, batch_size, lr0, imgsz, project, resume=False, last_weights=None):
+        from ultralytics import YOLO
+        
+        # 如果有上次保存的权重，从它继续训练
+        if last_weights and os.path.exists(last_weights):
+            self.model = YOLO(last_weights)
         else:
-            # 无checkpoint：从预训练模型开始训练
             self.model = YOLO(self.weights_path)
         
-        # 训练
         result = self.model.train(
             data=data_yaml,
             epochs=epochs,
@@ -83,9 +59,9 @@ class YOLOv10Detector:
             lr0=lr0,
             imgsz=imgsz,
             project=project,
-            amp=False
+            amp=False,
+            resume=False  # 不使用ultralytics的resume，用我们自己的方式
         )
-
         return result
 
     # #验证
@@ -120,18 +96,29 @@ class YOLOv10Detector:
 
 
 
-    #保存模型
-    def save(self,save_path,epoch=0):
-        # 1. 保存自己的 checkpoint（用于恢复训练）
-        torch.save({
-            'num_classes': self.num_classes,
-            'model': self.model.model.state_dict(),
-            'epoch': epoch
-        }, save_path)
+    #检测并裁剪返回皮损区域图像
+    def predict_with_box(self,img_path,conf=0.25,save_path=None):
+        results = self.predict(img_path,conf=conf)
+        coordinates = []
 
-        # 2. 同时保存 YOLO 格式（用于推理）
-        yolo_path = save_path.replace('.pt', '_yolo.pt')
-        self.model.save(yolo_path)
+        for result in results:
+            boxes = result.boxes
+            if boxes is not None and len(boxes) > 0:
+                #获取坐标 [x1,y1,x2,y2]
+                coords = boxes.xyxy.cpu().numpy().tolist()[0]
+                coordinates.append(coords)
+
+
+                #保存带框图片
+                if save_path:
+                    result.save(save_path)
+
+        return results,coordinates
+
+
+    #保存模型
+    def save(self, save_path, epoch=0):
+        self.model.save(save_path)
 
 
     #加载模型

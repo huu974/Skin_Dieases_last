@@ -10,7 +10,7 @@ batch_size: 16
 lr0: 1e-3
 imgsz: 640
 data_yaml: 'HAM10000/yolo_dataset/data.yaml'
-yolo_resume: 'yolo_variables/checkpoint.pt'
+yolo_resume: 'false'
 yolo_freeze: 10
 use_lora: false
 lora_r: 8

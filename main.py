@@ -18,7 +18,7 @@ from model.PanDerm import MyModel
 from train_validation import tra_val
 from utils.outputwriter import OutputSave
 from utils.writer import init_writer
-
+from model.ResNet50 import ResNet50Classifier
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
@@ -50,12 +50,23 @@ def main():
     train_dataloader = get_train_dataloader(args)
     val_dataloader = get_val_dataloader(args)
 
-    # 获取模型 - 统一预训练模型目录
+    model_name = getattr(args,'model','efficientnet_b3')
+    # 获取模型统一预训练模型目录
     os.environ['TORCH_HOME'] = os.path.join(os.path.dirname(__file__), model_conf["save_path"])
-    model = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
-    xiaohui = MyModel(model=model,  num_classes=model_conf["num_classes"])
-    model = xiaohui.model_classifier().to(device)
+    if model_name == 'resnet50':
+        model = ResNet50Classifier(num_classes=model_conf["num_classes"],pretrained=True)
 
+
+    elif model_name == 'efficientnet_b3':
+        model = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
+        xiaohui = MyModel(model=model,  num_classes=model_conf["num_classes"])
+        model = xiaohui.model_classifier()
+
+    else:
+        raise ValueError(f"不支持的模型: {model_name}")
+
+
+    model = model.to(device)
     # 损失函数
     criterion = nn.CrossEntropyLoss()
 

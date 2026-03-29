@@ -14,6 +14,8 @@ def parse():
         description="Skin diseases image classification"
     )
 
+    #模型选择
+    parser.add_argument('--model',default='efficientnet_b3',type=str,help='模型名称')
 
     #命令行参数列表
     #参1：参数名称  参2：参数的默认值    参3：参数类型     参4：参数的描述

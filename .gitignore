@@ -73,5 +73,10 @@ rag/chroma_db/
 *.gz
 *.rar
 
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+
 # 配置文件（包含密钥的不要上传）
 # config/secrets.yml

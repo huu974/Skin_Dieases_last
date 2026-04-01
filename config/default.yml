@@ -5,7 +5,7 @@ datapath-test: ./skin diseases/test
 
 # 训练参数
 batch-size: 16
-channels-last: false
+channels-last: true
 save-path: ./variables
 
 # 优化器

@@ -1,0 +1,39 @@
+# 智肤康后端依赖
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+sqlalchemy==2.0.25
+pymysql==1.1.0
+cryptography==41.0.7
+redis==5.0.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+pydantic==2.5.3
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# AI模型相关
+torch==2.1.2
+torchvision==0.16.2
+ultralytics==8.1.0
+Pillow==10.2.0
+numpy==1.26.3
+
+# PDF生成
+reportlab==4.0.8
+
+# 向量数据库
+chromadb==0.4.22
+
+# LLM相关
+openai==1.10.0
+httpx==0.26.0
+
+# 异步任务
+celery==5.3.6
+
+# 日志
+loguru==0.7.2
+
+# 工具
+python-dateutil==2.8.2

@@ -27,7 +27,7 @@ def parse():
     parser.add_argument('--datapath-val', default='./skin diseases/val', type=str, help='验证数据集路径')
     parser.add_argument('--datapath-test', default='./skin diseases/test', type=str, help='测试数据集路径')
     parser.add_argument('--batch-size',default=16,type=int,help='批量大小')
-    parser.add_argument('--channels-last',default=False,type=bool,help='是否使用channels_last内存格式')
+    parser.add_argument('--channels-last',default=True,type=bool,help='是否使用channels_last内存格式')
     parser.add_argument('--save-path',default='./variables',type=str,help='保存变量的路径')
 
     #优化器

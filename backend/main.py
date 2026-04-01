@@ -46,8 +46,14 @@ class UserProfile(BaseModel):
 
 # ============ 模拟数据存储（生产环境用数据库）============
 
+# 用户存储 {username: {password, email, ...}}
+users_db = {}
+
 # 历史记录存储
 diagnosis_history = []
+
+# 当前登录用户
+current_user = {"username": "", "token": ""}
 
 # 用户信息存储
 user_profiles = {
@@ -280,21 +286,72 @@ async def update_user_profile(profile: UserProfile, user_id: str = "default"):
     return {"message": "用户信息已更新", "profile": user_profiles[user_id]}
 
 
-@app.post("/api/user/login")
+@app.post("/api/auth/register")
+async def register(username: str = Form(...), password: str = Form(...), email: str = Form(...)):
+    """用户注册"""
+    if username in users_db:
+        raise HTTPException(status_code=400, detail="用户名已存在")
+    
+    users_db[username] = {
+        "password": password,
+        "email": email,
+        "created_at": datetime.now().isoformat()
+    }
+    
+    # 创建用户 profile
+    user_profiles[username] = {
+        "name": username,
+        "email": email,
+        "phone": "",
+        "age": 25,
+        "gender": "未设置",
+        "skin_type": "普通",
+        "allergies": "",
+        "theme": "light",
+        "language": "中文"
+    }
+    
+    return {"message": "注册成功", "username": username}
+
+
+@app.post("/api/auth/login")
 async def login(username: str = Form(...), password: str = Form(...)):
-    """用户登录（模拟）"""
-    # TODO: 实现真实的用户认证
+    """用户登录"""
+    if username not in users_db:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    
+    if users_db[username]["password"] != password:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    
+    token = f"token_{username}_{datetime.now().timestamp()}"
+    current_user["username"] = username
+    current_user["token"] = token
+    
     return {
-        "token": "mock_token_" + username,
-        "user_id": "default",
-        "username": username
+        "token": token,
+        "username": username,
+        "email": users_db[username]["email"]
     }
 
 
-@app.post("/api/user/logout")
+@app.post("/api/auth/logout")
 async def logout():
     """用户登出"""
+    current_user["username"] = ""
+    current_user["token"] = ""
     return {"message": "已退出登录"}
+
+
+@app.get("/api/auth/status")
+async def get_auth_status():
+    """获取登录状态"""
+    return {
+        "is_logged_in": bool(current_user["username"]),
+        "username": current_user["username"]
+    }
+
+
+
 
 
 # ============ 预防建议 API ============

@@ -49,8 +49,9 @@ class tra_val(object):
         self.TestLoss, self.TestTop1, self.TestTop5 = ([] for i in range(3))
         # 学习率历史，初始为初始学习率
         self.Learning_Rate = [self.args.lr]
-        #学习率策略
-        self.lr_policy = LR(base_lr=self.args.lr,warmup_epoch=5,epochs=self.args.epochs)
+        #学习率策略（余弦退火 + Warmup）
+        steps_per_epoch = len(train_loader) if train_loader else (len(val_loader) if val_loader else 100)
+        self.lr_policy = LR(base_lr=self.args.lr,warmup_epoch=5,epochs=self.args.epochs,steps_per_epoch=steps_per_epoch)
 
     #模型训练
     def train(self, epoch):
@@ -73,7 +74,7 @@ class tra_val(object):
         #4.训练开始
         for i, (input, target) in enumerate(tqdm(self.train_loader, desc=f'训练 Epoch {self.epoch+1}')):
             #5.计算应用学习率并应用到优化器更新
-            self.lr = self.lr_policy.apply_lr(epoch)
+            self.lr = self.lr_policy.apply_lr(epoch, i)
             self.assign_learning_rate(self.lr)
 
             #6.确定内存格式和半精度

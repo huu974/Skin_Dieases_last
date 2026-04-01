@@ -19,6 +19,7 @@ from train_validation import tra_val
 from utils.outputwriter import OutputSave
 from utils.writer import init_writer
 from model.ResNet50 import ResNet50Classifier
+from model.custom_skin_net import CustomSkinNet
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
@@ -53,6 +54,10 @@ def main():
     model_name = getattr(args,'model','efficientnet_b3')
     # 获取模型统一预训练模型目录
     os.environ['TORCH_HOME'] = os.path.join(os.path.dirname(__file__), model_conf["save_path"])
+    
+    # 根据模型名创建子目录保存模型
+    args.save_path = os.path.join(args.save_path, model_name)
+    
     if model_name == 'resnet50':
         model = ResNet50Classifier(num_classes=model_conf["num_classes"],pretrained=True)
 
@@ -61,6 +66,14 @@ def main():
         model = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
         xiaohui = MyModel(model=model,  num_classes=model_conf["num_classes"])
         model = xiaohui.model_classifier()
+
+    elif model_name == 'custom_skin_net':
+        model = CustomSkinNet(
+            num_classes=model_conf["num_classes"],
+            width_coef=1.5,
+            depth_coef=1.4,
+            pretrained=False
+        )
 
     else:
         raise ValueError(f"不支持的模型: {model_name}")
@@ -83,7 +96,7 @@ def main():
     start_epoch = 0
     print(f"resume 参数: {args.resume}")  # 加这行
     if args.resume:
-        checkpoint = torch.load(args.resume)
+        checkpoint = torch.load(args.resume, weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = checkpoint['epoch'] + 1

@@ -221,13 +221,13 @@ if __name__ == '__main__':
      print(f'使用设备：{device}')
 
 
-     # test_image,true_class = get_random_test_image()
-     # print(f'测试图片路径：{test_image}')
-     # print(f'真实类别：{true_class}')
+     test_image,true_class = get_random_test_image()
+     print(f'测试图片路径：{test_image}')
+     print(f'真实类别：{true_class}')
 
 
 
-     test_image,_ = get_random_yolo_image()
+     # test_image,_ = get_random_yolo_image()
      #1.测试分类模型
      pred_classifier, conf_classifier = test_classifier(test_image)
 

@@ -1,8 +1,10 @@
-classification_model: "variables/best_model.pth.tar"
+classification_model: "variables/efficientnet_b3/best_model.pth.tar"
+classification_model_custom: "variables/custom_skin_net/best_model.pth.tar"
 yolo_model: "yolo_variables/checkpoint_yolo.pt"
+batch_size: 16
 
 test_data: "skin diseases/test"
-
+eval_data: "skin diseases/val"
 class_names: [
 "痤疮和酒渣鼻","光化性角化病和基底细胞癌","特应性皮炎",
 "大疱性疾病","蜂窝组织炎和细菌感染","湿疹",

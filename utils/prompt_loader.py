@@ -41,6 +41,13 @@ def load_rag_prompts():
         logger.error(f'[load_rag_prompts]在yaml中未找到rag_summarize_prompt_path配置项')
         raise e
 
+    try:
+        return open(rag_prompt_path, "r", encoding="utf-8").read()
+
+    except Exception as e:
+        logger.error(f'[load_rag_prompts]解析RAG提示词出错,{str(e)}')
+        raise e
+
 
 
 

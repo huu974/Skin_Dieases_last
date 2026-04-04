@@ -108,16 +108,11 @@ export default function Diagnosis() {
 
     try {
       const formData = new FormData()
-      formData.append('file', imageFile)
-      formData.append('models', JSON.stringify({
-        use_yolo: useYolo,
-        use_classification: true,
-        classification_model: model
-      }))
+      formData.append('image', imageFile)
 
-      const response = await axios.post('http://localhost:8000/api/diagnosis/predict', formData, {
+      const response = await axios.post('http://localhost:8000/api/detect', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 30000
+        timeout: 60000
       })
 
       clearInterval(progressInterval)
@@ -125,18 +120,21 @@ export default function Diagnosis() {
       setLoading(false)
       
       setResult({
-        yolo: response.data.detection || null,
+        yolo: response.data,
         classification: response.data.classification,
         top1: response.data.classification?.top1,
         top5: response.data.classification?.top5,
-        primary_disease: response.data.primary_disease,
-        primary_confidence: response.data.primary_confidence,
+        primary_disease: response.data.classification?.top1?.class,
+        primary_confidence: response.data.classification?.top1?.probability,
+        model_used: response.data.classification?.model_used || 'custom_skin_net',
         timestamp: new Date().toLocaleString(),
         image_name: imageFile?.name || 'uploaded_image.jpg',
       })
+      message.success('诊断完成！')
     } catch (error) {
       clearInterval(progressInterval)
       console.log('API调用失败，使用模拟数据', error)
+      message.error('API调用失败，使用模拟数据')
       
       const mockResult = generateRandomResults()
       setProgress(100)
@@ -148,7 +146,7 @@ export default function Diagnosis() {
         top5: mockResult.top5,
         primary_disease: mockResult.top1.class,
         primary_confidence: mockResult.top1.probability,
-        model_used: model,
+        model_used: 'custom_skin_net',
         timestamp: new Date().toLocaleString(),
         image_name: imageFile?.name || 'uploaded_image.jpg',
       })
@@ -173,13 +171,11 @@ export default function Diagnosis() {
               <Row gutter={16}>
                 <Col span={12}>
                   <Select
-                    value={model}
-                    onChange={setModel}
+                    value="custom_skin_net"
+                    disabled
                     style={{ width: '100%' }}
-                    placeholder="选择分类模型"
                   >
-                    <Option value="efficientnet_b3">EfficientNet-B3 (推荐)</Option>
-                    <Option value="resnet50">ResNet50</Option>
+                    <Option value="custom_skin_net">Custom Skin Net</Option>
                   </Select>
                 </Col>
                 <Col span={12}>
@@ -288,9 +284,9 @@ export default function Diagnosis() {
                       <Text>
                         <Text strong>YOLO检测置信度: </Text>
                         <Text strong style={{ color: '#FF8C00' }}>
-                          {(result.yolo.confidence * 100).toFixed(1)}%
+                          {((result.yolo.detection_confidences?.[0] || result.yolo.confidence || 0) * 100).toFixed(1)}%
                         </Text>
-                        <Text type="secondary"> | 检测到 {result.yolo.classes?.length || 0} 个病变区域</Text>
+                        <Text type="secondary"> | 检测到 {result.yolo.detection_classes?.length || result.yolo.classes?.length || 0} 个病变区域</Text>
                       </Text>
                     </Space>
                   </Card>

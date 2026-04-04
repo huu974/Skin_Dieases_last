@@ -25,10 +25,10 @@ from model.PanDerm import MyModel
 from model.ResNet50 import ResNet50Classifier
 from model.custom_skin_net import CustomSkinNet
 from utils.config_handler import model_conf
-
-
-TEST_DATA_PATH = './skin diseases/val'  # 验证集路径
-BATCH_SIZE = 16
+from utils.config_handler import test_evaluate_conf
+from model.yolo_detector import YOLOv10Detector
+from utils.config_handler import yolov10
+from ultralytics import YOLO
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -44,7 +44,7 @@ def get_transforms():
 
 
 def load_checkpoint(model, checkpoint_path, device):
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device,weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
     return model
@@ -126,6 +126,8 @@ def get_model_path(model_name):
     return best_model
 
 
+
+
 def main(model_name):
     num_classes = model_conf["num_classes"]
     print(f"=" * 50)
@@ -137,17 +139,17 @@ def main(model_name):
     model = model.to(device)
     print(f"设备: {device}")
     
-    test_dataset = ImageFolder(root=TEST_DATA_PATH, transform=get_transforms())
-    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    test_dataset = ImageFolder(root=test_evaluate_conf["eval_data"], transform=get_transforms())
+    test_loader = DataLoader(test_dataset, batch_size=test_evaluate_conf["batch_size"], shuffle=False)
     print(f"数据集大小: {len(test_dataset)}")
     print(f"类别数: {len(test_dataset.classes)}")
     
-    MODEL_PATH = get_model_path(model_name)
-    if os.path.exists(MODEL_PATH):
-        model = load_checkpoint(model, MODEL_PATH, device)
-        print(f"已加载模型权重: {MODEL_PATH}")
+    model_path = get_model_path(model_name)
+    if os.path.exists(model_path):
+        model = load_checkpoint(model, model_path, device)
+        print(f"已加载模型权重: {model_path}")
     else:
-        print(f"未找到模型权重文件: {MODEL_PATH}")
+        print(f"未找到模型权重文件: {model_path}")
         return
     
     print("正在评估模型...")
@@ -186,9 +188,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     if args.model == 'yolo':
-        from model.yolo_detector import YOLOv10Detector
-        from utils.config_handler import yolov10
-        
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         model_size = yolov10['model_size']
         
@@ -201,7 +200,6 @@ if __name__ == '__main__':
         
         weights_path = os.path.join('./yolo_variables', 'checkpoint_yolo.pt')
         if os.path.exists(weights_path):
-            from ultralytics import YOLO
             detector.model = YOLO(weights_path)
             print(f"已加载模型权重: {weights_path}")
         else:

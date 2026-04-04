@@ -1,18 +1,87 @@
-import { Card, Typography, Row, Col, Statistic, Table, Tag, Button, Space, Empty } from 'antd'
-import { DeleteOutlined, ExportOutlined, MedicineBoxOutlined } from '@ant-design/icons'
-import React from 'react'
+import { useState, useEffect } from 'react'
+import { Card, Typography, Row, Col, Table, Tag, Button, Space, Empty, Modal, message, Statistic } from 'antd'
+import { DeleteOutlined, ExportOutlined, MedicineBoxOutlined, LoadingOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
 
 const { Title, Text } = Typography
-
-const mockRecords = [
-  { id: 1, image_name: 'skin_001.jpg', disease: '银屑病', disease_en: 'Psoriasis', confidence: 0.87, timestamp: '2026-03-28 10:30:00' },
-  { id: 2, image_name: 'skin_002.jpg', disease: '湿疹', disease_en: 'Eczema', confidence: 0.76, timestamp: '2026-03-27 15:20:00' },
-  { id: 3, image_name: 'skin_003.jpg', disease: '痤疮', disease_en: 'Acne', confidence: 0.92, timestamp: '2026-03-26 09:15:00' },
-  { id: 4, image_name: 'skin_004.jpg', disease: '荨麻疹', disease_en: 'Urticaria', confidence: 0.68, timestamp: '2026-03-25 14:45:00' },
-]
+const { confirm } = Modal
 
 export default function History() {
-  const records = mockRecords
+  const [records, setRecords] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 })
+
+  const fetchHistory = async (page = 1) => {
+    setLoading(true)
+    try {
+      const response = await fetch(`http://localhost:8000/api/history?page=${page}&size=10`)
+      const data = await response.json()
+      setRecords(data.records || [])
+      setPagination({
+        current: data.page,
+        pageSize: data.size,
+        total: data.total
+      })
+    } catch (error) {
+      console.error('获取历史记录失败:', error)
+      message.error('获取历史记录失败')
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    fetchHistory()
+  }, [])
+
+  const handleDelete = (record) => {
+    confirm({
+      title: '确定删除这条诊断记录?',
+      icon: <ExclamationCircleOutlined />,
+      content: `诊断疾病: ${record.result} (${record.timestamp})`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      async onOk() {
+        try {
+          const response = await fetch(`http://localhost:8000/api/history/${record.id}`, {
+            method: 'DELETE'
+          })
+          if (response.ok) {
+            message.success('删除成功')
+            fetchHistory(pagination.current)
+          } else {
+            message.error('删除失败')
+          }
+        } catch (error) {
+          message.error('删除失败')
+        }
+      },
+    })
+  }
+
+  const handleDeleteAll = () => {
+    confirm({
+      title: '确定清空所有诊断记录?',
+      icon: <ExclamationCircleOutlined />,
+      content: '此操作不可恢复，请谨慎操作',
+      okText: '清空',
+      okType: 'danger',
+      cancelText: '取消',
+      async onOk() {
+        try {
+          // 逐条删除
+          for (const record of records) {
+            await fetch(`http://localhost:8000/api/history/${record.id}`, {
+              method: 'DELETE'
+            })
+          }
+          message.success('清空成功')
+          fetchHistory(1)
+        } catch (error) {
+          message.error('清空失败')
+        }
+      },
+    })
+  }
 
   const columns = [
     {
@@ -29,27 +98,18 @@ export default function History() {
       width: 80,
     },
     {
-      title: '疾病名称',
-      dataIndex: 'disease',
-      key: 'disease',
-      render: (text, record) => (
-        <div>
-          <Text strong>{text}</Text>
-          <br />
-          <Text type="secondary" style={{ fontSize: 12 }}>{record.disease_en}</Text>
-        </div>
-      ),
-    },
-    {
-      title: '置信度',
-      dataIndex: 'confidence',
-      key: 'confidence',
-      render: (conf) => (
-        <Tag color={conf >= 0.8 ? 'green' : conf >= 0.6 ? 'orange' : 'red'}>
-          {(conf * 100).toFixed(1)}%
-        </Tag>
-      ),
-      width: 100,
+      title: '诊断结果',
+      dataIndex: 'result',
+      key: 'result',
+      render: (text, record) => {
+        let diseaseName = '未知'
+        if (record.result?.classification?.top1?.class) {
+          diseaseName = record.result.classification.top1.class
+        } else if (typeof text === 'string') {
+          diseaseName = text
+        }
+        return <Text strong>{diseaseName}</Text>
+      },
     },
     {
       title: '诊断时间',
@@ -59,33 +119,53 @@ export default function History() {
     {
       title: '操作',
       key: 'action',
-      render: () => (
+      render: (_, record) => (
         <Space>
-          <Button type="text" icon={<ExportOutlined />}>导出</Button>
-          <Button type="text" danger icon={<DeleteOutlined />}>删除</Button>
+          <Button 
+            type="text" 
+            danger 
+            icon={<DeleteOutlined />}
+            onClick={() => handleDelete(record)}
+          >
+            删除
+          </Button>
         </Space>
       ),
-      width: 150,
+      width: 100,
     },
   ]
 
   const avgConfidence = records.length > 0
-    ? (records.reduce((sum, r) => sum + r.confidence, 0) / records.length * 100).toFixed(1)
+    ? (records.reduce((sum, r) => {
+        const conf = r.result?.classification?.top1?.probability || 0
+        return sum + conf
+      }, 0) / records.length * 100).toFixed(1)
     : 0
+
+  const latestTime = records.length > 0 ? records[0]?.timestamp : '暂无'
 
   return (
     <div>
-      <Title level={2} style={{ margin: 0 }}>
-        诊断历史
-      </Title>
-      <Text type="secondary">查看和管理您的历史诊断记录</Text>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <Title level={2} style={{ margin: 0 }}>
+            诊断历史
+          </Title>
+          <Text type="secondary">查看和管理您的历史诊断记录</Text>
+        </div>
+        {records.length > 0 && (
+          <Button danger onClick={handleDeleteAll}>
+            清空记录
+          </Button>
+        )}
+      </div>
 
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
         <Col xs={24} sm={8}>
           <Card>
             <Statistic
               title="总诊断次数"
-              value={records.length}
+              value={pagination.total}
               prefix={<MedicineBoxOutlined />}
               valueStyle={{ color: '#165DFF' }}
             />
@@ -95,7 +175,7 @@ export default function History() {
           <Card>
             <Statistic
               title="最近诊断"
-              value={records[0]?.timestamp || '暂无'}
+              value={latestTime}
               valueStyle={{ fontSize: 16 }}
             />
           </Card>
@@ -113,15 +193,29 @@ export default function History() {
       </Row>
 
       <Card style={{ marginTop: 24 }}>
-        {records.length > 0 ? (
+        {pagination.total > 0 ? (
           <Table
             columns={columns}
             dataSource={records}
             rowKey="id"
-            pagination={{ pageSize: 5 }}
+            loading={loading}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total: pagination.total,
+              onChange: (page) => fetchHistory(page),
+              showSizeChanger: false,
+            }}
           />
         ) : (
-          <Empty description="暂无诊断记录" />
+          <Empty 
+            description="暂无诊断记录" 
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          >
+            <Button type="primary" href="/diagnosis">
+              去诊断
+            </Button>
+          </Empty>
         )}
       </Card>
     </div>

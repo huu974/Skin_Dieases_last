@@ -1,5 +1,7 @@
 import { Card, Row, Col, Statistic, Typography, Space } from 'antd'
 import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import axios from 'axios'
 import {
   MedicineBoxOutlined,
   MessageOutlined,
@@ -44,6 +46,42 @@ const features = [
 
 export default function Home() {
   const navigate = useNavigate()
+  const [stats, setStats] = useState({
+    totalDiagnoses: 0,
+    diagnosesChange: 0,
+    diseaseTypes: 0,
+    accuracy: 0,
+    dataset: '',
+    totalUsers: 0,
+    usersChange: 0,
+  })
+
+  useEffect(() => {
+    axios.get('http://localhost:8000/api/system/dashboard/stats')
+      .then(res => {
+        setStats({
+          totalDiagnoses: res.data.total_diagnoses,
+          diagnosesChange: res.data.diagnoses_change,
+          diseaseTypes: res.data.disease_types,
+          accuracy: res.data.accuracy,
+          dataset: res.data.dataset,
+          totalUsers: res.data.total_users,
+          usersChange: res.data.users_change,
+        })
+      })
+      .catch(() => {
+        setStats({
+          totalDiagnoses: 0,
+          diagnosesChange: 0,
+          diseaseTypes: 23,
+          accuracy: 0,
+          dataset: '皮肤病变数据集',
+          totalUsers: 0,
+          usersChange: 0,
+        })
+      })
+  }, [])
+
   const navigateTo = (path) => {
     navigate(path)
   }
@@ -87,12 +125,12 @@ export default function Home() {
           <Card hoverable>
             <Statistic
               title="总诊断次数"
-              value={156}
+              value={stats.totalDiagnoses}
               prefix={<MedicineBoxOutlined />}
               valueStyle={{ color: '#165DFF' }}
             />
             <Text type="secondary" style={{ fontSize: 12 }}>
-              <ArrowUpOutlined /> 较上周 +12%
+              <ArrowUpOutlined /> 较上周 {stats.diagnosesChange}%
             </Text>
           </Card>
         </Col>
@@ -100,7 +138,7 @@ export default function Home() {
           <Card hoverable>
             <Statistic
               title="支持疾病类型"
-              value={23}
+              value={stats.diseaseTypes}
               prefix={<SafetyOutlined />}
               valueStyle={{ color: '#36CFC9' }}
             />
@@ -113,13 +151,13 @@ export default function Home() {
           <Card hoverable>
             <Statistic
               title="诊断准确率"
-              value={92.5}
+              value={stats.accuracy}
               prefix={<UserOutlined />}
               suffix="%"
               valueStyle={{ color: '#0FC6C2' }}
             />
             <Text type="secondary" style={{ fontSize: 12 }}>
-              基于HAM10000数据集
+              基于{stats.dataset}数据集
             </Text>
           </Card>
         </Col>
@@ -127,12 +165,12 @@ export default function Home() {
           <Card hoverable>
             <Statistic
               title="用户总数"
-              value={89}
+              value={stats.totalUsers}
               prefix={<UserOutlined />}
               valueStyle={{ color: '#FF8C00' }}
             />
             <Text type="secondary" style={{ fontSize: 12 }}>
-              <ArrowUpOutlined /> 较上周 +5%
+              <ArrowUpOutlined /> 较上周 {stats.usersChange}%
             </Text>
           </Card>
         </Col>
@@ -181,10 +219,14 @@ export default function Home() {
       <Card>
         <Row gutter={[8, 8]}>
           {[
-            '痤疮与酒渣鼻', '光化性角化病', '特应性皮炎', '湿疹',
-            '皮疹与药物反应', '疱疹/HPV', '色素性疾病', '狼疮',
-            '黑色素瘤', '指甲疾病', '银屑病', '荨麻疹',
-            '血管瘤', '血管炎', '疣/病毒感染', '真菌感染',
+            '痤疮和酒渣鼻', '光化性角化病和基底细胞癌', '特应性皮炎',
+            '大疱性疾病', '蜂窝组织炎和细菌感染', '湿疹',
+            '发疹和药物性皮炎', '脱发', '疱疹/HPV',
+            '色素性疾病', '红斑狼疮', '黑色素瘤和痣',
+            '甲真菌病', '毒葛皮炎', '银屑病和扁平苔藓',
+            '疥疮和莱姆病', '脂溢性角化病和良性肿瘤', '系统性疾病',
+            '真菌感染', '荨麻疹', '血管瘤',
+            '血管炎', '疣和传染性软疣',
           ].map((disease) => (
             <Col xs={12} sm={8} md={6} lg={3} key={disease}>
               <div

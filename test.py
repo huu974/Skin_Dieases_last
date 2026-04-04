@@ -38,7 +38,7 @@ transform = transforms.Compose([
 
 
 #1.测试分类模型
-def test_classifier(image_path,model_name='efficientnet_b3'):
+def test_classifier(image_path,model_name='custom_skin_net'):
     print('开始测试分类模型...')
     device =  torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -53,7 +53,16 @@ def test_classifier(image_path,model_name='efficientnet_b3'):
         model = xiaohui.model_classifier().to(device)
         checkpoint = torch.load(test_evaluate_conf['classification_model'], map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
-
+    elif model_name == 'custom_skin_net':
+        from model.custom_skin_net import CustomSkinNet
+        model = CustomSkinNet(
+            num_classes=model_conf["num_classes"],
+            width_coef=1.5,
+            depth_coef=1.4,
+            pretrained=False
+        ).to(device)
+        checkpoint = torch.load("variables/custom_skin_net/best_model.pth.tar", map_location=device, weights_only=False)
+        model.load_state_dict(checkpoint['model_state_dict'])
     else:
         raise ValueError(f"不支持的模型: {model_name}")
 
@@ -154,7 +163,16 @@ def test_yolo_classifier(image_path,save_box_image,model_name='efficientnet_b3')
         model = xiaohui.model_classifier().to(device)
         checkpoint = torch.load(test_evaluate_conf['classification_model'], map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
-
+    elif model_name == 'custom_skin_net':
+        from model.custom_skin_net import CustomSkinNet
+        model = CustomSkinNet(
+            num_classes=model_conf["num_classes"],
+            width_coef=1.5,
+            depth_coef=1.4,
+            pretrained=False
+        ).to(device)
+        checkpoint = torch.load("variables/custom_skin_net/best_model.pth.tar", map_location=device, weights_only=False)
+        model.load_state_dict(checkpoint['model_state_dict'])
     else:
         raise ValueError(f"不支持的模型: {model_name}")
 
@@ -220,26 +238,25 @@ if __name__ == '__main__':
      device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
      print(f'使用设备：{device}')
 
-
+     # test_image,_ = get_random_yolo_image()
+     # test_image = "skin diseases/test/Light Diseases and Disorders of Pigmentation/sun-damaged-skin-27.jpg"
      test_image,true_class = get_random_test_image()
      print(f'测试图片路径：{test_image}')
-     print(f'真实类别：{true_class}')
+     print()
 
 
 
-     # test_image,_ = get_random_yolo_image()
-     #1.测试分类模型
-     pred_classifier, conf_classifier = test_classifier(test_image)
-
-     print(f'分类结果：{pred_classifier}，置信度：{conf_classifier.item():.2%}')
+     models = ['efficientnet_b3', 'custom_skin_net']
+     results = {}
 
 
 
-     #2.测试YOLO模型
-     # test_yolo(test_image)
-
-
-     #3.测试YOLO+分类模型
-     # test_yolo_classifier("HAM10000/yolo_dataset/images/val/ISIC_0024372.jpg", save_box_image="output.jpg")
-     test_yolo_classifier(test_image, save_box_image="output.jpg")
+     print()
+     print('='*50)
+     print('YOLO检测 + 分类模型')
+     print('='*50)
+     print('\n>>> efficientnet_b3:')
+     test_yolo_classifier(test_image, save_box_image="output_efficientnet.jpg", model_name='efficientnet_b3')
+     print('\n>>> custom_skin_net:')
+     test_yolo_classifier(test_image, save_box_image="output_custom.jpg", model_name='custom_skin_net')
 

@@ -8,14 +8,11 @@ from utils.logger import logger
 from langchain_core.tools import tool
 from rag.rag_service import VectorStoreService
 import torch
-from torchvision.models import efficientnet_b3, EfficientNet_B3_Weights
-import torch.nn as nn
 from utils.config_handler import model_conf
 from utils.prompt_loader import load_report_prompts
 import os
 from PIL import Image
 import torchvision.transforms as transforms
-from model.PanDerm import MyModel
 from model.yolo_detector import YOLOv10Detector
 import datetime
 
@@ -31,8 +28,15 @@ rag_service = None
 def get_yolo_service():
     global yolo_service
     if yolo_service is None:
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         yolo_service = YOLOv10Detector(model_size='n')
-        yolo_service.model = YOLO("runs/detect/runs/detect/train1/train5/weights/best.pt")
+        weights_path = os.path.join(project_root, "yolo_variables", "checkpoint_yolo.pt")
+        if os.path.exists(weights_path):
+            logger.info(f"[YOLO] 加载自定义模型: {weights_path}")
+            yolo_service.load(weights_path)
+        else:
+            logger.warning(f"[YOLO] 自定义模型不存在: {weights_path}")
+    return yolo_service
 
 
 
@@ -40,14 +44,17 @@ def get_yolo_service():
 def get_classifier_model():
     global classifier_model
     if classifier_model is None:
-        pretrained_dir = os.path.join(os.path.dirname(__file__), '..', '..', model_conf.get("save_path", "pretrained"))
-        os.environ['TORCH_HOME'] = pretrained_dir
-        model = efficientnet_b3(weights=EfficientNet_B3_Weights.IMAGENET1K_V1)
-        
-
-        xiaohui = MyModel(model=model, num_classes=model_conf["num_classes"])
-        classifier_model = xiaohui.model_classifier()
-        checkpoint = torch.load("variables/best_model.pth.tar",map_location="cpu")
+        from model.custom_skin_net import CustomSkinNet
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        model_path = os.path.join(project_root, "variables", "custom_skin_net", "best_model.pth.tar")
+        logger.info(f"[分类] 加载自定义模型: {model_path}")
+        classifier_model = CustomSkinNet(
+            num_classes=model_conf["num_classes"],
+            width_coef=1.5,
+            depth_coef=1.4,
+            pretrained=False
+        )
+        checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
         classifier_model.load_state_dict(checkpoint["model_state_dict"])
         classifier_model.eval()
     return classifier_model
@@ -74,6 +81,8 @@ SKIN_DISEASE_CLASSES= [
 "血管炎","疣和传染性软疣"
 ]
 
+
+
 @tool(description="使用YOLO模型检测皮肤图像中的皮损区域，返回是否检测到异常皮损")
 def yolo_detect(image_path: str) -> str:
     """
@@ -81,6 +90,11 @@ def yolo_detect(image_path: str) -> str:
     """
     try:
         yolo = get_yolo_service()
+        
+        # 如果没有YOLO模型，返回默认结果
+        if yolo is None or yolo.model is None:
+            return "YOLO模型未加载，跳过检测"
+        
         crops, results = yolo.predict_with_crop(image_path)
         
         if results and len(results) > 0:

@@ -17,7 +17,6 @@ pretrained/hub/checkpoints/
 # 训练输出和日志
 runs/
 run/
-run/
 logs/
 *.log
 *.logs

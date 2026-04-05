@@ -103,10 +103,15 @@ export default function History() {
       key: 'result',
       render: (text, record) => {
         let diseaseName = '未知'
+        // 兼容两种格式：1. classification对象（诊断分析页）, 2. 字符串（智能对话）
         if (record.result?.classification?.top1?.class) {
           diseaseName = record.result.classification.top1.class
+        } else if (record.result?.disease_name) {
+          diseaseName = record.result.disease_name
         } else if (typeof text === 'string') {
-          diseaseName = text
+          // 智能对话格式：提取疾病名称
+          const match = text.match(/^([^()]+)/)
+          diseaseName = match ? match[0].trim() : text
         }
         return <Text strong>{diseaseName}</Text>
       },
@@ -137,7 +142,10 @@ export default function History() {
 
   const avgConfidence = records.length > 0
     ? (records.reduce((sum, r) => {
-        const conf = r.result?.classification?.top1?.probability || 0
+        // 兼容两种格式：1. classification对象（诊断分析页）, 2. 字符串（智能对话）
+        const conf = r.result?.classification?.top1?.probability || 
+                     r.result?.model_results?.confidence ||
+                     (typeof r.result === 'string' ? 0.5 : 0)
         return sum + conf
       }, 0) / records.length * 100).toFixed(1)
     : 0

@@ -99,8 +99,18 @@ class EnhancedRAGService:
     """LLM生成"""
     def generate_response(self, query: str, context_docs: list) -> str:
         context = ""
-        for i, doc in enumerate(context_docs):
-            context += f"【参考资料{i+1}】:{doc.page_content}\n"
+        seen = set()
+        for doc in context_docs:
+            # 提取原始内容，移除【参考X】标记
+            content = doc.page_content
+            # 移除 【参考1】 这样的前缀
+            import re
+            content_cleaned = re.sub(r'^\[?【?参考\d+】?\]?\s*', '', content)
+            
+            if content_cleaned in seen:
+                continue
+            seen.add(content_cleaned)
+            context += f"【参考资料{len(seen)}】:{content_cleaned}\n"
         
         try:
             response = self.chain.invoke({

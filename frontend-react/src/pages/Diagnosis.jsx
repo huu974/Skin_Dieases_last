@@ -46,18 +46,7 @@ const generateRandomResults = () => {
   results.sort((a, b) => b.probability - a.probability)
   const top5 = results.slice(0, 5)
   
-  const yoloConf = 0.85 + Math.random() * 0.14
-  const yoloBoxes = [[50 + Math.random() * 50, 30 + Math.random() * 30, 250 + Math.random() * 50, 230 + Math.random() * 50]]
-  const yoloClasses = ['病变区域']
-  const yoloConfidences = [yoloConf]
-  
   return {
-    yolo: {
-      boxes: yoloBoxes,
-      classes: yoloClasses,
-      confidences: yoloConfidences,
-      confidence: yoloConf,
-    },
     top1: top5[0],
     top5: top5,
   }
@@ -70,7 +59,6 @@ export default function Diagnosis() {
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState(null)
   const [model, setModel] = useState('efficientnet_b3')
-  const [useYolo, setUseYolo] = useState(true)
 
   const handleUpload = (file) => {
     const isImage = file.type.startsWith('image/')
@@ -120,7 +108,6 @@ export default function Diagnosis() {
       setLoading(false)
       
       setResult({
-        yolo: response.data,
         classification: response.data.classification,
         top1: response.data.classification?.top1,
         top5: response.data.classification?.top5,
@@ -141,7 +128,6 @@ export default function Diagnosis() {
       setLoading(false)
       
       setResult({
-        yolo: mockResult.yolo,
         top1: mockResult.top1,
         top5: mockResult.top5,
         primary_disease: mockResult.top1.class,
@@ -176,16 +162,6 @@ export default function Diagnosis() {
                     style={{ width: '100%' }}
                   >
                     <Option value="custom_skin_net">Custom Skin Net</Option>
-                  </Select>
-                </Col>
-                <Col span={12}>
-                  <Select
-                    value={useYolo}
-                    onChange={setUseYolo}
-                    style={{ width: '100%' }}
-                  >
-                    <Option value={true}>启用YOLO检测</Option>
-                    <Option value={false}>仅分类</Option>
                   </Select>
                 </Col>
               </Row>
@@ -276,21 +252,6 @@ export default function Diagnosis() {
                   </Title>
                   <Text style={{ color: 'rgba(255,255,255,0.8)' }}>分类置信度</Text>
                 </div>
-
-                {result.yolo && (
-                  <Card size="small" style={{ background: '#FFF4E8' }}>
-                    <Space>
-                      <InfoCircleOutlined style={{ color: '#FF8C00' }} />
-                      <Text>
-                        <Text strong>YOLO检测置信度: </Text>
-                        <Text strong style={{ color: '#FF8C00' }}>
-                          {((result.yolo.detection_confidences?.[0] || result.yolo.confidence || 0) * 100).toFixed(1)}%
-                        </Text>
-                        <Text type="secondary"> | 检测到 {result.yolo.detection_classes?.length || result.yolo.classes?.length || 0} 个病变区域</Text>
-                      </Text>
-                    </Space>
-                  </Card>
-                )}
 
                 <Text type="secondary">
                   使用模型: {result.model_used || model} | 时间: {result.timestamp}

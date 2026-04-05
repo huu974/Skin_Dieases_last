@@ -2,8 +2,6 @@
 定义皮肤疾病诊断智能体可调用的各种工具函数
 使用@tool装饰器注册为可用工具
 """
-from ultralytics import YOLO
-
 from utils.logger import logger
 from langchain_core.tools import tool
 from rag.rag_service import VectorStoreService
@@ -13,30 +11,12 @@ from utils.prompt_loader import load_report_prompts
 import os
 from PIL import Image
 import torchvision.transforms as transforms
-from model.yolo_detector import YOLOv10Detector
 import datetime
 
 
 
-yolo_service = None
 classifier_model = None
 rag_service = None
-
-
-
-"""加载YOLO服务"""
-def get_yolo_service():
-    global yolo_service
-    if yolo_service is None:
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        yolo_service = YOLOv10Detector(model_size='n')
-        weights_path = os.path.join(project_root, "yolo_variables", "checkpoint_yolo.pt")
-        if os.path.exists(weights_path):
-            logger.info(f"[YOLO] 加载自定义模型: {weights_path}")
-            yolo_service.load(weights_path)
-        else:
-            logger.warning(f"[YOLO] 自定义模型不存在: {weights_path}")
-    return yolo_service
 
 
 
@@ -80,36 +60,6 @@ SKIN_DISEASE_CLASSES= [
 "真菌感染","荨麻疹","血管瘤",
 "血管炎","疣和传染性软疣"
 ]
-
-
-
-@tool(description="使用YOLO模型检测皮肤图像中的皮损区域，返回是否检测到异常皮损")
-def yolo_detect(image_path: str) -> str:
-    """
-    返回:检测结果字符串，包含是否检测到皮损、置信度等信息
-    """
-    try:
-        yolo = get_yolo_service()
-        
-        # 如果没有YOLO模型，返回默认结果
-        if yolo is None or yolo.model is None:
-            return "YOLO模型未加载，跳过检测"
-        
-        crops, results = yolo.predict_with_crop(image_path)
-        
-        if results and len(results) > 0:
-            result = results[0]
-            boxes = result.boxes
-            
-            if boxes is not None and len(boxes) > 0:
-                confidence = float(boxes.conf[0]) if len(boxes) > 0 else 0.0
-                return f"检测到皮损区域，异常置信度：{confidence:.2%}，建议进一步分析"
-        
-        return "未检测到明显皮损区域，皮肤状态正常"
-            
-    except Exception as e:
-        logger.error(f"[yolo_detect]检测失败: {e}")
-        return f"检测失败: {str(e)}"
 
 
 @tool(description="使用分类模型对皮肤图像进行疾病分类判断")
@@ -172,9 +122,8 @@ def rag_query(query: str) -> str:
 
 
 @tool(description="生成完整的皮肤疾病诊断报告，包含检测、分类、症状和建议信息")
-def generate_report(detection_result: str, classification_result: str, user_symptoms: str, rag_suggestions: str) -> str:
+def generate_report(classification_result: str, user_symptoms: str, rag_suggestions: str) -> str:
     """
-    detection_result: YOLO检测结果
     classification_result: 分类模型结果
     user_symptoms: 用户描述的症状
     rag_suggestions: RAG检索的建议

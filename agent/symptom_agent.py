@@ -96,6 +96,44 @@ class SymptomAnalyzerAgent:
     """分析用户症状"""
     def analyze(self, user_query: str) -> dict:
         extracted = self.extract_symptoms(user_query)
+        
+        # 检查提取到的信息是否足够
+        mentioned = extracted.get("mentioned", [])
+        location = extracted.get("location", [])
+        duration = extracted.get("duration")
+        
+        # 如果信息太少，主动追问
+        if not mentioned and not location:
+            # 信息不足，生成追问提示
+            prompt = f"""用户只提供了非常有限的信息："{user_query}"
+
+你是一名皮肤科医生，需要获取更多症状信息才能进行分析。
+
+请生成3个简短的问题来询问用户，获取关键信息：
+1. 具体症状（痒？疼？红斑？脱皮？）
+2. 具体部位（脸上？身上？手上？）
+3. 持续时间（多久了？）
+
+注意：
+- 不要用列表格式，直接用自然段落
+- 问题要简洁，一次问1-2个
+- 语气友好，像医生问诊"""
+
+            messages = [
+                SystemMessage(content=self.system_prompt),
+                HumanMessage(content=prompt)
+            ]
+            
+            response = chat_model.invoke(messages)
+            
+            return {
+                "analysis": response.content,
+                "extracted_symptoms": extracted,
+                "rag_result": {"answer": "信息不足，无法检索知识库"},
+                "need_image": True,
+                "need_more_info": True
+            }
+        
         query_for_rag = user_query
         if extracted["mentioned"]:
             query_for_rag += " " + " ".join(extracted["mentioned"])

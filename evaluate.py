@@ -26,9 +26,6 @@ from model.ResNet50 import ResNet50Classifier
 from model.custom_skin_net import CustomSkinNet
 from utils.config_handler import model_conf
 from utils.config_handler import test_evaluate_conf
-from model.yolo_detector import YOLOv10Detector
-from utils.config_handler import yolov10
-from ultralytics import YOLO
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -179,45 +176,9 @@ def main(model_name):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='皮肤病分类模型评估')
-    parser.add_argument('--model', type=str, default='efficientnet_b3',
-                        choices=['efficientnet_b3', 'resnet50', 'custom_skin_net', 'yolo'],
+    parser.add_argument('--model', type=str, default='resnet50',
+                        choices=['efficientnet_b3', 'resnet50', 'custom_skin_net'],
                         help='模型名称')
-    parser.add_argument('--data-yaml', type=str, 
-                        default='E:\\py项目\\Skin diseases\\HAM10000\\yolo_dataset\\data.yaml',
-                        help='YOLO数据集配置路径')
     args = parser.parse_args()
     
-    if args.model == 'yolo':
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model_size = yolov10['model_size']
-        
-        print(f"=" * 50)
-        print(f"评估模型: YOLO-{model_size}")
-        print(f"设备: {device}")
-        print(f"=" * 50)
-        
-        detector = YOLOv10Detector(model_size=model_size, device=device)
-        
-        weights_path = os.path.join('./yolo_variables', 'checkpoint_yolo.pt')
-        if os.path.exists(weights_path):
-            detector.model = YOLO(weights_path)
-            print(f"已加载模型权重: {weights_path}")
-        else:
-            print(f"未找到模型权重: {weights_path}")
-            print("将使用预训练权重进行评估")
-        
-        print("正在评估 YOLO 模型...")
-        results = detector.model.val(
-            data=args.data_yaml,
-            device=device,
-            split='val'
-        )
-        
-        print(f"\n========== YOLO 评估结果 ==========")
-        print(f"mAP@0.5:       {results.box.map50:.4f}")
-        print(f"mAP@0.5:0.95: {results.box.map:.4f}")
-        print(f"Precision:     {results.box.mp:.4f}")
-        print(f"Recall:        {results.box.mr:.4f}")
-        print(f"=" * 50)
-    else:
-        main(args.model)
+    main(args.model)

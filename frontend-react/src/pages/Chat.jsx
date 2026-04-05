@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Card, Input, Button, Typography, Space, Avatar, Collapse, Tag, Upload, Modal, List, Drawer } from 'antd'
+import { Card, Input, Button, Typography, Space, Avatar, Collapse, Tag, Upload, Modal, List, Drawer, message } from 'antd'
 import { SendOutlined, DeleteOutlined, RobotOutlined, UserOutlined, LoadingOutlined, ApiOutlined, BulbOutlined, PlusOutlined, PictureOutlined, HistoryOutlined, FileTextOutlined } from '@ant-design/icons'
 
 const { Title, Text } = Typography
@@ -58,8 +58,21 @@ export default function Chat() {
   const [chatHistory, setChatHistory] = useState([])
   const messagesEndRef = useRef(null)
 
-  // 加载对话历史
+  // 加载对话历史，刷新页面时保留对话内容
   useEffect(() => {
+    // 如果localStorage中没有对话内容，初始化
+    if (!localStorage.getItem('chat_messages')) {
+      const initialMessage = [{ role: 'assistant', content: '🏥 您好！我是皮肤病智能诊断助手。请描述您遇到的皮肤问题？', thinking: [], tools: [] }]
+      localStorage.setItem('chat_messages', JSON.stringify(initialMessage))
+      setMessages(initialMessage)
+    }
+    
+    // 如果没有session_id，生成新的
+    if (!localStorage.getItem('chat_session_id')) {
+      const newSessionId = 'session_' + Date.now()
+      localStorage.setItem('chat_session_id', newSessionId)
+    }
+    
     setChatHistory(getChatHistory())
   }, [])
 
@@ -91,8 +104,16 @@ export default function Chat() {
   const handleSend = async () => {
     if (!input.trim() && images.length === 0) return
 
+    // 生成或获取当前会话ID
+    let sessionId = localStorage.getItem('chat_session_id')
+    if (!sessionId) {
+      sessionId = 'session_' + Date.now()
+      localStorage.setItem('chat_session_id', sessionId)
+    }
+
     const formData = new FormData()
     formData.append('message', input)
+    formData.append('session_id', sessionId)
     
     images.forEach(img => {
       formData.append('images', img)
@@ -103,7 +124,8 @@ export default function Chat() {
       content: input || '[图片]', 
       images: images.map(img => URL.createObjectURL(img)),
       thinking: [], 
-      tools: [] 
+      tools: [],
+      taskType: null
     }
     setMessages((prev) => [...prev, userMsg])
     setInput('')
@@ -118,7 +140,8 @@ export default function Chat() {
       thinking: [], 
       tools: [],
       isThinking: true,
-      hasImages: images.length > 0  // 用hasImages标志是否有图片
+      hasImages: images.length > 0,
+      taskType: null
     }])
 
     try {
@@ -150,11 +173,13 @@ export default function Chat() {
               const data = JSON.parse(line.slice(6))
               if (data.type === 'thinking') {
                 thinking = data.data
+                const taskType = data.task_type || 'unknown'
                 setMessages((prev) => {
                   const newMsgs = [...prev]
                   const lastMsg = newMsgs[newMsgs.length - 1]
                   if (lastMsg.role === 'assistant') {
                     lastMsg.thinking = thinking
+                    lastMsg.taskType = taskType
                     lastMsg.isThinking = false // 开始收到思考过程
                     lastMsg.content = '' // 清空"正在思考中..."
                   }
@@ -194,7 +219,7 @@ export default function Chat() {
     setLoading(false)
   }
 
-  const handleClear = () => {
+  const handleClear = async () => {
     // 如果当前对话有内容，先保存到历史
     if (messages.length > 1) {
       const updatedHistory = saveToHistory(messages)
@@ -204,6 +229,23 @@ export default function Chat() {
     setMessages(newMessages)
     setImages([])
     localStorage.setItem('chat_messages', JSON.stringify(newMessages))
+    
+    // 先保存旧的session_id用于删除
+    const oldSessionId = localStorage.getItem('chat_session_id') || 'default'
+    
+    // 生成新的session_id
+    const newSessionId = 'session_' + Date.now()
+    localStorage.setItem('chat_session_id', newSessionId)
+    
+    // 调用后端API清空旧session的对话历史
+    try {
+      await fetch(`http://localhost:8000/api/chat/history?session_id=${oldSessionId}`, {
+        method: 'DELETE'
+      })
+      message.success('对话已清空，开始新会话')
+    } catch (e) {
+      console.error('清空对话历史失败', e)
+    }
   }
 
   const handleNewChat = () => {
@@ -232,7 +274,7 @@ export default function Chat() {
           <Title level={2} style={{ margin: 0 }}>
             智能对话
           </Title>
-          <Text type="secondary">基于RAG知识库与大语言模型的AI医生助手</Text>
+          <Text type="secondary">皮诊智核 · 皮肤病变智能诊断系统</Text>
         </div>
         <Space>
           <Button 
@@ -365,13 +407,20 @@ export default function Chat() {
                       </div>
                     )}
 
-                    {/* 正在思考提示 */}
+                    {/* 正在思考提示 - 无图片时 */}
                     {msg.isThinking && !msg.hasImages && (
                       <div style={{ marginTop: 16, padding: 16, background: '#f0f5ff', borderRadius: 8, border: '1px solid #d6e4ff' }}>
                         <Space>
                           <LoadingOutlined spin style={{ color: '#1890ff' }} />
                           <Text strong style={{ color: '#1890ff' }}>AI 正在思考中...</Text>
                         </Space>
+                        <div style={{ marginTop: 8 }}>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {msg.taskType === 'symptom_only' ? '正在分析您描述的情况...' : 
+                             msg.taskType === 'follow_up' ? '正在思考您的回复...' :
+                             '正在处理您的请求...'}
+                          </Text>
+                        </div>
                       </div>
                     )}
 
@@ -384,25 +433,32 @@ export default function Chat() {
                         </Space>
                         <div style={{ marginTop: 8 }}>
                           <Text type="secondary" style={{ fontSize: 12 }}>
-                            正在分析您的症状和上传的图像...
+                            {msg.taskType === 'image_only' ? '正在分析您上传的图像...' : 
+                             msg.taskType === 'symptom_and_image' ? '正在分析您的描述和上传的图像...' :
+                             '正在处理您的请求...'}
                           </Text>
                         </div>
                       </div>
                     )}
 
-                    {/* 推理过程 - 仅在有图片且有thinking数据时显示 */}
-                    {msg.thinking && msg.thinking.length > 0 && msg.hasImages && (
+                    {/* 推理过程 - 有thinking数据时显示（不限图片） */}
+                    {msg.thinking && msg.thinking.length > 0 && (
                       <Collapse 
                         ghost 
                         style={{ marginTop: 8, background: '#f0f5ff', borderRadius: 8 }}
-                        defaultActiveKey={[]}
+                        defaultActiveKey={msg.taskType && msg.taskType !== 'symptom_and_image' ? [] : ['thinking']}
                         items={[
                           {
                             key: 'thinking',
                             label: (
                               <Space>
                                 <BulbOutlined style={{ color: '#faad14' }} />
-                                <Text strong style={{ color: '#165DFF' }}>💡 AI推理过程</Text>
+                                <Text strong style={{ color: '#165DFF' }}>
+                                  {msg.taskType === 'image_only' ? '🔍 图像诊断过程' : 
+                                   msg.taskType === 'symptom_only' ? '🩺 症状分析过程' :
+                                   msg.taskType === 'symptom_and_image' ? '🧠 综合诊断过程' :
+                                   '💡 AI推理过程'}
+                                </Text>
                                 <Tag color="blue">{msg.thinking.length} 步</Tag>
                               </Space>
                             ),

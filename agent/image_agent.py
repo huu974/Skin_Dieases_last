@@ -5,12 +5,11 @@
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from model.factory import chat_model
-from agent.tools.agent_tools import yolo_detect, skin_classify
+from agent.tools.agent_tools import skin_classify
 from rag.enhanced_rag import EnhancedRAGService
 from utils.logger import logger
 import os
 from PIL import Image
-import os
 
 
 """图像诊断Agent"""
@@ -24,10 +23,9 @@ class ImageDiagnosisAgent:
         return """你是一名专业的皮肤科AI诊断助手，擅长分析皮肤图像。
 
 你的职责：
-1. 使用YOLO模型检测图像中是否存在皮损区域
-2. 使用分类模型判断可能的皮肤疾病类型
-3. 综合分析图像特征和检测结果
-4. 提供专业的诊断建议
+1. 使用分类模型判断可能的皮肤疾病类型
+2. 综合分析图像特征和检测结果
+3. 提供专业的诊断建议
 
 注意：
 - 只提供辅助诊断参考，不做确定性诊断
@@ -50,17 +48,10 @@ class ImageDiagnosisAgent:
 
 
 
-    """执行YOLO检测和疾病分类"""
+    """执行疾病分类"""
     def detect_and_classify(self, image_path: str) -> dict:
         self._ensure_models_loaded()
         logger.info(f"[图像诊断] 开始分析图像: {image_path}")
-        
-        try:
-            yolo_result = yolo_detect.invoke({"image_path": image_path})
-            logger.info(f"[YOLO] 检测完成: {yolo_result}")
-        except Exception as e:
-            logger.error(f"YOLO检测失败: {e}")
-            yolo_result = f"检测失败: {str(e)}"
         
         try:
             classify_result = skin_classify.invoke({"image_path": image_path})
@@ -70,7 +61,6 @@ class ImageDiagnosisAgent:
             classify_result = f"分类失败: {str(e)}"
         
         return {
-            "detection": yolo_result,
             "classification": classify_result
         }
 
@@ -87,11 +77,12 @@ class ImageDiagnosisAgent:
             query += " " + user_symptoms
         
         rag_result = self.rag.rag_retrieve(query)
+        logger.info(f"[图像诊断] RAG检索query: {query}")
+        logger.info(f"[图像诊断] RAG检索结果前200字: {str(rag_result.get('answer', ''))[:200]}")
         
         prompt = f"""请基于以下图像分析结果提供专业诊断意见：
 
 图像检测结果：
-- YOLO检测：{model_results['detection']}
 - 疾病分类：{model_results['classification']}
 
 用户症状描述：{user_symptoms or '未提供'}
@@ -129,40 +120,6 @@ class ImageDiagnosisAgent:
 
 
 
-    """验证诊断结果"""
-    def validate_diagnosis(self, diagnosis_result: dict) -> dict:
-        validation = {
-            "is_reliable": True,
-            "warnings": [],
-            "suggestions": []
-        }
-        
-        detection = diagnosis_result.get("model_results", {}).get("detection", "")
-        classification = diagnosis_result.get("model_results", {}).get("classification", "")
-        
-        if "未检测到" in detection or "正常" in detection:
-            validation["warnings"].append("图像中未检测到明显皮损区域")
-            validation["is_reliable"] = False
-        
-        if "失败" in classification:
-            validation["warnings"].append("分类模型执行失败")
-            validation["is_reliable"] = False
-        
-        confidence_match = classification.split("置信度：")
-        if len(confidence_match) > 1:
-            try:
-                conf_str = confidence_match[1].strip().replace("%", "")
-                conf = float(conf_str) / 100
-                if conf < 0.5:
-                    validation["warnings"].append("分类置信度较低，建议就医确认")
-                    validation["suggestions"].append("建议提供更清晰的图像或描述更多症状")
-            except:
-                pass
-        
-        return validation
-
-
-
     """完整的图像分析流程"""
     def analyze(self, image_path: str, user_symptoms: str = None) -> dict:
         if not os.path.exists(image_path):
@@ -170,9 +127,6 @@ class ImageDiagnosisAgent:
         
         result = self.analyze_with_context(image_path, user_symptoms)
         
-        validation = self.validate_diagnosis(result)
-        result["validation"] = validation
-
         return result
 
 """图像预处理器"""

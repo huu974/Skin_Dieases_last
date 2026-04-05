@@ -23,7 +23,6 @@ class DiagnosisStage(Enum):
     SYMPTOM_ANALYSIS = "symptom_analysis"
     IMAGE_DIAGNOSIS = "image_diagnosis"
     TREATMENT_ADVICE = "treatment_advice"
-    SELF_VERIFICATION = "self_verification"
     COMPLETED = "completed"
 
 """任务类型"""
@@ -32,6 +31,7 @@ class TaskType(Enum):
     IMAGE_ONLY = "image_only"
     SYMPTOM_AND_IMAGE = "symptom_and_image"
     FOLLOW_UP = "follow_up"
+    GREETING = "greeting"
 
 
 """多Agent协作管理器"""
@@ -46,22 +46,30 @@ class MultiAgentManager:
         self.task_type = None
         
         self.conversation_history = []
-        self.context = {
-            "user_symptoms": None,
-            "image_path": None,
-            "diagnosis_result": None,
-            "treatment_result": None,
-            "patient_info": {}
-        }
-        
-        self.self_verification_enabled = True
         self.long_term_goals = []
         
         self.system_prompt = self._load_system_prompt()
         
         self.thinking_log = []
+        
+        # 图像分析缓存，避免重复分析相同图像
+        self.image_analysis_cache = {}
+        
+        # 初始化context
+        self.context = {
+            "user_symptoms": None,
+            "image_path": None,
+            "diagnosis_result": None,
+            "treatment_result": None,
+            "patient_info": {},
+            "conversation_history": []  # 保存对话历史
+        }
     
     def _load_system_prompt(self) -> str:
+        prompt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "skinderm_llm_decision_prompt.txt")
+        if os.path.exists(prompt_path):
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                return f.read()
         return """你是一个智能皮肤病诊断系统，通过多Agent协作完成诊断任务。
 
 工作流程：
@@ -74,9 +82,12 @@ class MultiAgentManager:
 
     def determine_task_type(self, query: str, has_image: bool) -> TaskType:
         """判断任务类型"""
-        if not query.strip() or query in ["开始", "开始诊断"]:
-            if has_image:
-                return TaskType.IMAGE_ONLY
+        query_empty = not query.strip() or query in ["开始", "开始诊断"]
+        
+        if query_empty and has_image:
+            return TaskType.IMAGE_ONLY
+        
+        if query_empty:
             return TaskType.FOLLOW_UP
         
         if has_image:
@@ -89,47 +100,436 @@ class MultiAgentManager:
         return self.generate_response(results)
     
     
-    async def chat_with_thinking_stream(self, query: str):
+    async def chat_with_thinking_stream(self, query: str, current_image_path: str | None = None):
         """
-        带思考过程的流式对话
-        实时返回思考步骤和工具调用
+        带思考过程的流式对话 - LLM自主决策版
+        LLM决定任务类型、调用哪些Agent、如何整合结果
         """
-        # 重置思考日志
         self.thinking_log = []
+        has_current_image = current_image_path is not None
+        has_image = has_current_image or self.context.get("image_path") is not None
         
-        has_image = self.context.get("image_path") is not None
-        self.task_type = self.determine_task_type(query, has_image)
-        
-        # 1. 意图识别
-        user_input = query[:60] + "..." if len(query) > 60 else query
+        # 1. 意图识别 - 告诉LLM有图像
         step = {
             "stage": "🔍 意图识别",
-            "thought": f"接收到用户输入: '{user_input}'",
-            "reasoning": f"检测到图像: {'是' if has_image else '否'}，准备进行任务类型判断",
-            "decision": f"任务类型: {self.task_type.value if self.task_type else 'unknown'}",
+            "thought": f"接收到用户输入: '{query[:50]}...'",
+            "reasoning": f"检测到图像: {'是' if has_image else '否'}，准备让LLM自主决策",
+            "decision": "等待LLM决策",
             "status": "thinking"
         }
         self.thinking_log.append(step)
-        yield {"type": "thinking", "data": [step]}
+        yield {"type": "thinking", "data": [step], "task_type": "unknown"}
         
+        await asyncio.sleep(2)
+        
+        # 2. LLM自主决策 - 让LLM决定任务类型和需要调用的Agent
+        
+        # 检查是否有之前的诊断结果（判断是否是追问）
+        has_existing_diagnosis = self.context.get("diagnosis_result") is not None
+        image_path = self.context.get("image_path")
+        
+        decision_prompt = f"""【任务】判断对话任务类型并决定需要调用的Agent
+
+【当前会话状态】
+- 本次请求是否上传了新图片：{'是' if has_current_image else '否'}
+- 会话历史中已存储的图片：{image_path if image_path else '无'}
+- 是否有之前的诊断结果：{'是' if has_existing_diagnosis else '否'}
+- 之前的诊断结果：{self.context.get('diagnosis_result', {}).get('disease_name', '') if has_existing_diagnosis else '无'}
+
+【用户本次输入】
+"{query}"
+
+【任务类型定义】
+1. greeting - 用户只是简单问候（你好、你是谁、hi、hello、在吗等）
+2. image_only - 只有图片诊断，无症状文字描述
+3. symptom_and_image - 同时有图片和症状描述
+4. symptom_only - 只有症状文字描述，没有图片
+5. follow_up - 追问/补充说明，使用之前的诊断结果继续回答
+
+【Agent说明】
+- SymptomAnalyzerAgent：分析症状文字
+- ImageDiagnosisAgent：分析图片
+- TreatmentAdviceAgent：生成治疗建议
+
+【判断规则】（重要！严格遵守）
+1. 如果用户只是问候 → greeting，不调用任何Agent
+2. 如果本次上传了新图片（has_current_image=True）→ image_only
+3. 如果本次没有上传图片，但有之前的诊断结果，且用户只是在追问 → follow_up
+4. 如果本次没有上传图片，也没有之前的诊断结果 → symptom_only
+5. 如果本次有图片 + 有症状文字 → symptom_and_image
+
+【关键区分】
+- 追问特征：用户回复"比较疼痛"、"还有别的症状吗"、"需要手术吗"等
+- 新图片特征：本次请求中有图片上传
+
+请严格按以下格式输出：
+任务类型: [greeting/image_only/symptom_and_image/symptom_only/follow_up]
+需要调用的Agent: [Agent名称，用逗号分隔]
+下一步行动: [简短描述]
+"""
+        
+        try:
+            messages = [HumanMessage(content=decision_prompt)]
+            response = chat_model.invoke(messages)
+            decision_text = str(response.content)
+            
+            # 解析LLM决策
+            task_type_str = "unknown"
+            agents_to_call = []
+            
+            # 优先检查 greeting 类型（简单问候词）
+            query_lower = query.lower().strip()
+            is_greeting = query_lower in ["你好", "你是谁", "hi", "hello", "嗨", "您好", "hey", "在吗", "干嘛", "开始", "开始诊断"] or query_lower.startswith("你好")
+            
+            if is_greeting or "greeting" in decision_text.lower():
+                task_type_str = "greeting"
+                agents_to_call = []
+            elif "image_only" in decision_text.lower():
+                task_type_str = "image_only"
+                agents_to_call = ["ImageDiagnosisAgent", "TreatmentAdviceAgent"]
+            elif "symptom_and_image" in decision_text.lower():
+                task_type_str = "symptom_and_image"
+                agents_to_call = ["SymptomAnalyzerAgent", "ImageDiagnosisAgent", "TreatmentAdviceAgent"]
+            elif "symptom_only" in decision_text.lower():
+                task_type_str = "symptom_only"
+                agents_to_call = ["SymptomAnalyzerAgent", "TreatmentAdviceAgent"]
+            else:
+                task_type_str = "follow_up"
+                agents_to_call = ["TreatmentAdviceAgent"]
+            
+            # greeting类型特殊处理
+            if task_type_str == "greeting":
+                # 使用RAG获取系统介绍
+                rag_result = self.rag.rag_retrieve("皮诊智核 你是谁 系统介绍")
+                system_info = rag_result.get("answer", "")[:500]
+                
+                # 获取参考资料
+                documents = rag_result.get("documents", [])
+                references = ""
+                if documents:
+                    for i, doc in enumerate(documents[:3], 1):
+                        content = doc.page_content[:200] if hasattr(doc, 'page_content') else str(doc)[:200]
+                        source = doc.metadata.get('source', '未知来源') if hasattr(doc, 'metadata') else '未知来源'
+                        references += f"【参考资料{i}】({source}): {content}\n"
+                
+                # 判断是否有之前的诊断结果
+                has_existing_diagnosis = self.context.get("diagnosis_result") is not None
+                
+                if has_existing_diagnosis:
+                    # 有之前的诊断，结合诊断结果回复
+                    diagnosis_info = self.context.get("diagnosis_result", {})
+                    disease = diagnosis_info.get("disease_name", "")
+                    greeting_prompt = f"""请以皮诊智核皮肤病智能诊断助手的身份回复用户。
+
+用户问"你是谁"，请结合以下信息回复：
+
+参考知识：
+{system_info}
+
+参考资料：
+{references}
+
+用户之前的诊断结果：{disease}
+
+请生成友好的回复，介绍自己并结合之前的诊断结果。注意：不要使用任何列表格式或markdown符号，用自然段落描述。
+"""
+                else:
+                    # 没有诊断，直接用RAG知识回复
+                    greeting_prompt = f"""请以皮诊智核皮肤病智能诊断助手的身份回复用户。
+
+用户问"你是谁"，请根据以下知识回复：
+
+参考知识：
+{system_info}
+
+参考资料：
+{references}
+
+请生成友好的自我介绍。注意：不要使用任何列表格式或markdown符号，用自然段落描述。
+"""
+                
+                messages = [HumanMessage(content=greeting_prompt)]
+                response = chat_model.invoke(messages)
+                greeting_response = response.content
+                
+                # 添加 LLM 决策步骤
+                step = {
+                    "stage": "💡 LLM决策",
+                    "thought": f"识别到用户问候，任务类型: greeting",
+                    "reasoning": "用户只是简单问候，无需调用诊断Agent，直接使用RAG知识回复",
+                    "decision": "任务类型: greeting | 调用Agent: 无",
+                    "tool": "无",
+                    "status": "completed"
+                }
+                self.thinking_log.append(step)
+                yield {"type": "thinking", "data": list(self.thinking_log), "task_type": "greeting"}
+                
+                yield {"type": "content", "data": greeting_response}
+                yield {"type": "done"}
+                return
+            
+            step = {
+                "stage": "💡 LLM决策",
+                "thought": decision_text[:200],
+                "reasoning": "LLM自主分析了用户输入",
+                "decision": f"任务类型: {task_type_str} | 调用Agent: {', '.join(agents_to_call)}",
+                "tool": ", ".join(agents_to_call),
+                "status": "completed"
+            }
+            self.thinking_log.append(step)
+            yield {"type": "thinking", "data": list(self.thinking_log), "task_type": task_type_str}
+            
+            self.task_type = TaskType(task_type_str) if task_type_str != "unknown" else None
+            
+        except Exception as e:
+            logger.error(f"LLM决策失败: {e}")
+            # 备用决策
+            task_type_str = self._decide_task_type_fallback(query, has_image).value
+            agents = {
+                "image_only": ["ImageDiagnosisAgent", "TreatmentAdviceAgent"],
+                "symptom_only": ["SymptomAnalyzerAgent", "TreatmentAdviceAgent"],
+                "symptom_and_image": ["SymptomAnalyzerAgent", "ImageDiagnosisAgent", "TreatmentAdviceAgent"],
+                "follow_up": ["TreatmentAdviceAgent"]
+            }
+            agents_to_call = agents.get(task_type_str, ["TreatmentAdviceAgent"])
+            step = {
+                "stage": "💡 任务决策(备用)",
+                "thought": f"LLM决策失败，使用备用方法: {task_type_str}",
+                "decision": f"任务类型: {task_type_str} | 调用Agent: {', '.join(agents_to_call)}",
+                "tool": ", ".join(agents_to_call),
+                "status": "completed"
+            }
+            self.thinking_log.append(step)
+            yield {"type": "thinking", "data": list(self.thinking_log), "task_type": task_type_str}
+            self.task_type = TaskType(task_type_str)
+        
+        await asyncio.sleep(2)
+        
+        # 3. 根据决策调用相应的Agent
+        results = await self._execute_by_decision(query, has_image)
+        
+        # 4. LLM整合结果生成最终回复
+        step = {
+            "stage": "📝 最终回复生成",
+            "thought": "正在让LLM整合所有Agent结果生成回复...",
+            "reasoning": "LLM根据用户问题和诊断结果自主决定回复内容",
+            "status": "thinking"
+        }
+        self.thinking_log.append(step)
+        yield {"type": "thinking", "data": list(self.thinking_log), "task_type": self.task_type.value if self.task_type else "unknown"}
+        
+        await asyncio.sleep(2)
+        
+        try:
+            final_response = await self._llm_generate_response(query, results)
+            yield {"type": "content", "data": final_response}
+        except Exception as e:
+            logger.error(f"LLM生成回复失败: {e}")
+            yield {"type": "content", "data": self._generate_response_fallback(results)}
+        
+        yield {"type": "done"}
+    
+    async def _execute_by_decision(self, query: str, has_image: bool) -> dict:
+        """根据决策执行相应的Agent"""
+        results = {}
+        task_type = self.task_type
+        
+        # 症状分析（包含 follow_up，因为追问也可能需要分析症状）
+        if task_type in [TaskType.SYMPTOM_ONLY, TaskType.SYMPTOM_AND_IMAGE, TaskType.FOLLOW_UP]:
+            logger.info("🩺 调用症状分析Agent...")
+            try:
+                symptom_result = self.symptom_agent.analyze(query)
+                results["symptom"] = symptom_result
+                self.context["user_symptoms"] = query
+                logger.info(f"🩺 症状分析完成: {symptom_result.get('extracted_symptoms', {}).get('mentioned', [])}")
+            except Exception as e:
+                logger.error(f"症状分析失败: {e}")
+                results["symptom"] = {"analysis": "症状分析暂时不可用", "extracted_symptoms": {}}
+        
+        # 图像诊断
+        if task_type in [TaskType.IMAGE_ONLY, TaskType.SYMPTOM_AND_IMAGE]:
+            if self.context.get("image_path"):
+                image_path = self.context["image_path"]
+                # 检查缓存
+                if image_path in self.image_analysis_cache:
+                    logger.info("🖼️ 图像已分析，使用缓存结果")
+                    results["image"] = self.image_analysis_cache[image_path]
+                    self.context["diagnosis_result"] = self.image_analysis_cache[image_path]
+                # 如果已经有诊断结果（刚才已经分析过），就不再重复分析
+                elif self.context.get("diagnosis_result"):
+                    logger.info("🖼️ 图像已诊断，跳过重复分析")
+                    results["image"] = self.context["diagnosis_result"]
+                else:
+                    logger.info("🖼️ 调用图像诊断Agent...")
+                    try:
+                        user_symptoms = self.context.get("user_symptoms") or (query if query.strip() else None)
+                        image_result = self.image_agent.analyze(image_path, user_symptoms)
+                        results["image"] = image_result
+                        self.context["diagnosis_result"] = image_result
+                        # 缓存结果
+                        self.image_analysis_cache[image_path] = image_result
+                        logger.info(f"🖼️ 图像诊断完成: {image_result.get('disease_name', '未知')}")
+                    except Exception as e:
+                        logger.error(f"图像诊断失败: {e}")
+                        results["image"] = {"diagnosis": "图像诊断暂时不可用", "disease_name": "未知"}
+        
+        # 治疗建议（包含 follow_up）
+        if task_type in [TaskType.IMAGE_ONLY, TaskType.SYMPTOM_ONLY, TaskType.SYMPTOM_AND_IMAGE, TaskType.FOLLOW_UP]:
+            logger.info("💊 调用治疗建议Agent...")
+            try:
+                # 优先使用之前的诊断结果
+                diagnosis_info = results.get("image") or results.get("symptom", {})
+                # 如果没有新的诊断结果，但有之前的诊断，使用之前的
+                if not diagnosis_info and self.context.get("diagnosis_result"):
+                    diagnosis_info = {
+                        "disease_name": self.context.get("diagnosis_result", {}).get("disease_name", ""),
+                        "user_symptoms": query
+                    }
+                patient_info = self.context.get("patient_info", {})
+                treatment_result = self.treatment_agent.analyze(diagnosis_info, patient_info)
+                results["treatment"] = treatment_result
+                logger.info("💊 治疗建议完成")
+            except Exception as e:
+                logger.error(f"治疗建议失败: {e}")
+                results["treatment"] = {"treatment_plan": "暂时无法生成治疗建议"}
+        
+        return results
+    
+    async def _llm_generate_response(self, query: str, results: dict) -> str:
+        """让LLM根据用户问题和诊断结果生成最终回复"""
+        prompt = self._load_final_response_prompt()
+        
+        if not prompt:
+            return self._generate_response_fallback(results)
+        
+        symptom_info = results.get("symptom", {}).get("analysis", "无")
+        # 确保图像诊断结果正确传递，优先使用disease_name和model_results
+        image_info = "无"
+        if results.get("image"):
+            image_result = results["image"]
+            disease_name = image_result.get("disease_name", "未知")
+            classification = image_result.get("model_results", {}).get("classification", "")
+            diagnosis = image_result.get("diagnosis", "")
+            # 组合图像诊断信息，确保结果一致性
+            image_info = f"疾病名称：{disease_name}，{classification}，{diagnosis}" if diagnosis else f"疾病名称：{disease_name}，{classification}"
+        
+        treatment_info = results.get("treatment", {}).get("treatment_plan", "无")
+        task_type = self.task_type.value if self.task_type else "unknown"
+        
+        # 增强对话历史的利用，保存更多历史记录
+        history_text = ""
+        if self.context.get("conversation_history"):
+            # 保存更多历史，提高多轮对话连续性
+            history = self.context["conversation_history"][-8:]  # 最近4轮对话
+            for h in history:
+                history_text += f"用户: {h.get('user', '')}\nAI: {h.get('assistant', '')}\n"
+        
+        full_prompt = f"""用户问题：{query}
+任务类型：{task_type}
+对话历史：
+{history_text}
+
+症状分析结果：{symptom_info}
+图像诊断结果：{image_info}
+治疗建议：{treatment_info}
+
+{prompt}"""
+        
+        try:
+            messages = [
+                SystemMessage(content=prompt),
+                HumanMessage(content=full_prompt)
+            ]
+            response = chat_model.invoke(messages)
+            content = response.content
+            if isinstance(content, list):
+                content = str(content[0]) if content else ""
+            
+            # 保存对话历史，用于后续追问
+            if self.context.get("conversation_history") is None:
+                self.context["conversation_history"] = []
+            self.context["conversation_history"].append({
+                "user": query,
+                "assistant": content
+            })
+            
+            return content
+        except Exception as e:
+            logger.error(f"LLM生成回复失败: {e}")
+            return self._generate_response_fallback(results)
+        
+    def _load_task_decision_prompt(self) -> str:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        prompt_path = os.path.join(base_dir, "prompts", "task_decision_prompt.txt")
+        logger.info(f"尝试加载提示词: {prompt_path}")
+        if os.path.exists(prompt_path):
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                return f.read()
+        logger.warning(f"提示词文件不存在: {prompt_path}")
+        return ""
+    
+    def _decide_task_type(self, query: str, has_image: bool) -> TaskType:
+        """使用LLM判断任务类型"""
+        prompt = self._load_task_decision_prompt()
+        
+        if not prompt:
+            logger.warning("未加载到任务决策提示词，使用备用方法")
+            return self._decide_task_type_fallback(query, has_image)
+        
+        full_prompt = f"""用户问题：{query if query.strip() else '（无文字输入）'}
+
+是否上传了图像：{'是' if has_image else '否'}
+
+{prompt}"""
+        
+        logger.info(f"任务决策 - query='{query}', has_image={has_image}")
+        
+        try:
+            messages = [
+                HumanMessage(content=full_prompt)
+            ]
+            response = chat_model.invoke(messages)
+            result = str(response.content).strip().lower()
+            logger.info(f"LLM原始返回: {result}")
+            
+            if "image_only" in result:
+                return TaskType.IMAGE_ONLY
+            elif "symptom_and_image" in result:
+                return TaskType.SYMPTOM_AND_IMAGE
+            elif "symptom_only" in result:
+                return TaskType.SYMPTOM_ONLY
+            else:
+                return TaskType.FOLLOW_UP
+        except Exception as e:
+            logger.error(f"LLM任务决策失败: {e}")
+            return self._decide_task_type_fallback(query, has_image)
+    
+    def _decide_task_type_fallback(self, query: str, has_image: bool) -> TaskType:
+        """备用任务决策"""
+        query_has_content = query.strip() and query not in ["开始", "开始诊断"]
+        inquiry_words = ["这是什么", "帮我看看", "这是什么症状", "帮我诊断", "看看这是什么",
+                        "这是什么病", "帮我分析", "这是什么情况", "帮我判断", "请问"]
+        is_inquiry = any(query.strip().startswith(word) for word in inquiry_words)
+        
+        if has_image and (not query_has_content or is_inquiry):
+            return TaskType.IMAGE_ONLY
+        elif has_image and query_has_content:
+            return TaskType.SYMPTOM_AND_IMAGE
+        else:
+            return TaskType.SYMPTOM_ONLY
+    
+    async def _task_decision_step(self, query: str, has_image: bool):
+        """任务决策步骤"""
         await asyncio.sleep(5)
         
-        # 2. 任务决策
-        if has_image and query in ["开始", "开始诊断", ""]:
-            reasoning = "用户提供了图像但没有描述症状，系统判定为【纯图像诊断】任务"
-            self.task_type = TaskType.IMAGE_ONLY
-        elif has_image:
-            reasoning = "用户同时提供图像和症状描述，判定为【症状+图像】任务"
-            self.task_type = TaskType.SYMPTOM_AND_IMAGE
-        else:
-            reasoning = "用户仅描述症状，判定为【纯症状分析】任务"
-            self.task_type = TaskType.SYMPTOM_ONLY
+        # 2. 任务决策 - 使用LLM判断
+        self.task_type = self._decide_task_type(query, has_image)
         
         step = {
             "stage": "💡 任务决策",
-            "thought": reasoning,
-            "reasoning": "根据用户输入内容判断任务类型",
-            "decision": f"最终判定: {self.task_type.value}",
+            "thought": "正在分析用户输入，判断任务类型...",
+            "reasoning": "调用LLM进行任务类型决策",
+            "decision": f"最终判定: {self.task_type.value if self.task_type else 'unknown'}",
             "status": "completed"
         }
         self.thinking_log.append(step)
@@ -150,13 +550,18 @@ class MultiAgentManager:
                 "status": "calling"
             }
             self.thinking_log.append(step)
-            yield {"type": "thinking", "data": list(self.thinking_log)}
+            yield {"type": "thinking", "data": list(self.thinking_log), "task_type": self.task_type.value if self.task_type else "unknown"}
             
             await asyncio.sleep(5)
             
-            symptom_result = self.symptom_agent.analyze(query)
-            results["symptom"] = symptom_result
-            self.context["user_symptoms"] = query
+            symptom_result = {"analysis": "症状分析暂时不可用，请稍后再试。", "extracted_symptoms": {}, "need_image": False}
+            try:
+                symptom_result = self.symptom_agent.analyze(query)
+                results["symptom"] = symptom_result
+                self.context["user_symptoms"] = query
+            except Exception as e:
+                logger.error(f"症状分析失败: {e}")
+                results["symptom"] = symptom_result
             
             step = {
                 "stage": "🩺 症状分析",
@@ -167,7 +572,7 @@ class MultiAgentManager:
                 "status": "completed"
             }
             self.thinking_log.append(step)
-            yield {"type": "thinking", "data": list(self.thinking_log)}
+            yield {"type": "thinking", "data": list(self.thinking_log), "task_type": self.task_type.value if self.task_type else "unknown"}
             
             await asyncio.sleep(5)
             
@@ -181,7 +586,7 @@ class MultiAgentManager:
                     "status": "waiting"
                 }
                 self.thinking_log.append(step)
-                yield {"type": "thinking", "data": list(self.thinking_log)}
+                yield {"type": "thinking", "data": list(self.thinking_log), "task_type": self.task_type.value if self.task_type else "unknown"}
                 await asyncio.sleep(5)
         
         # 4. 图像诊断
@@ -196,19 +601,27 @@ class MultiAgentManager:
                     "status": "calling"
                 }
                 self.thinking_log.append(step)
-                yield {"type": "thinking", "data": list(self.thinking_log)}
+                yield {"type": "thinking", "data": list(self.thinking_log), "task_type": self.task_type.value if self.task_type else "unknown"}
                 
                 await asyncio.sleep(5)
                 
-                image_result = self.image_agent.analyze(
-                    self.context["image_path"],
-                    self.context.get("user_symptoms")
-                )
-                results["image"] = image_result
-                self.context["diagnosis_result"] = image_result
-                
-                disease = image_result.get('disease_name', '未知')
-                confidence = image_result.get('model_results', {}).get('classification', '')
+                try:
+                    # IMAGE_ONLY 时 user_symptoms 还没设置，直接用 query
+                    user_symptoms_for_image = self.context.get("user_symptoms") or (query if query.strip() else "")
+                    image_result = self.image_agent.analyze(
+                        self.context["image_path"],
+                        user_symptoms_for_image if user_symptoms_for_image else None
+                    )
+                    results["image"] = image_result
+                    self.context["diagnosis_result"] = image_result
+                    
+                    disease = image_result.get('disease_name', '未知')
+                    confidence = image_result.get('model_results', {}).get('classification', '')
+                except Exception as e:
+                    logger.error(f"图像诊断失败: {e}")
+                    results["image"] = {"diagnosis": "图像诊断暂时不可用，请稍后再试。", "disease_name": "未知", "model_results": {}}
+                    confidence = ""
+                    disease = "未知"
                 
                 step = {
                     "stage": "🖼️ 图像诊断",
@@ -219,7 +632,7 @@ class MultiAgentManager:
                     "status": "completed"
                 }
                 self.thinking_log.append(step)
-                yield {"type": "thinking", "data": list(self.thinking_log)}
+                yield {"type": "thinking", "data": list(self.thinking_log), "task_type": self.task_type.value if self.task_type else "unknown"}
                 await asyncio.sleep(5)
         
         # 5. 治疗建议
@@ -233,17 +646,21 @@ class MultiAgentManager:
                 "status": "calling"
             }
             self.thinking_log.append(step)
-            yield {"type": "thinking", "data": list(self.thinking_log)}
+            yield {"type": "thinking", "data": list(self.thinking_log), "task_type": self.task_type.value if self.task_type else "unknown"}
             
             await asyncio.sleep(5)
             
-            diagnosis_info = {
-                "disease_name": results.get("image", {}).get("disease_name", ""),
-                "user_symptoms": self.context.get("user_symptoms", "")
-            }
-            treatment_result = self.treatment_agent.analyze(diagnosis_info, self.context.get("patient_info"))
-            results["treatment"] = treatment_result
-            self.context["treatment_result"] = treatment_result
+            try:
+                diagnosis_info = {
+                    "disease_name": results.get("image", {}).get("disease_name", ""),
+                    "user_symptoms": self.context.get("user_symptoms", "") or ""
+                }
+                treatment_result = self.treatment_agent.analyze(diagnosis_info, self.context.get("patient_info") or {})
+                results["treatment"] = treatment_result
+                self.context["treatment_result"] = treatment_result
+            except Exception as e:
+                logger.error(f"治疗建议生成失败: {e}")
+                results["treatment"] = {"treatment_plan": "治疗建议暂时不可用，请稍后再试。", "rag_result": {}, "sources": {}}
             
             step = {
                 "stage": "💊 治疗建议",
@@ -254,38 +671,10 @@ class MultiAgentManager:
                 "status": "completed"
             }
             self.thinking_log.append(step)
-            yield {"type": "thinking", "data": list(self.thinking_log)}
+            yield {"type": "thinking", "data": list(self.thinking_log), "task_type": self.task_type.value if self.task_type else "unknown"}
             await asyncio.sleep(5)
         
-        # 6. 诊断验证
-        if self.self_verification_enabled:
-            step = {
-                "stage": "✅ 诊断验证",
-                "thought": "正在执行自我验证，评估诊断结果的可靠性...",
-                "reasoning": "检查诊断结果的一致性和可信度",
-                "decision": "综合分析各Agent结果",
-                "status": "thinking"
-            }
-            self.thinking_log.append(step)
-            yield {"type": "thinking", "data": list(self.thinking_log)}
-            await asyncio.sleep(5)
-            
-            verification = self.self_verify(results)
-            results["verification"] = verification
-            
-            reliable = verification.get("reliable")
-            step = {
-                "stage": "✅ 诊断验证",
-                "thought": f"验证完成，诊断可靠性: {'高' if reliable else '低'}",
-                "reasoning": f"置信度: {verification.get('confidence', 0)}，注意事项: {len(verification.get('concerns', []))}项",
-                "decision": f"可靠性{'足够' if reliable else '存疑'}，建议{'注意观察' if reliable else '专业就医'}",
-                "status": "completed"
-            }
-            self.thinking_log.append(step)
-            yield {"type": "thinking", "data": list(self.thinking_log)}
-            await asyncio.sleep(5)
-        
-        # 7. 生成最终回复
+        # 6. 生成最终回复
         step = {
             "stage": "📝 回复生成",
             "thought": "正在整合所有Agent的结果，生成完整诊断报告...",
@@ -294,10 +683,14 @@ class MultiAgentManager:
             "status": "thinking"
         }
         self.thinking_log.append(step)
-        yield {"type": "thinking", "data": list(self.thinking_log)}
+        yield {"type": "thinking", "data": list(self.thinking_log), "task_type": self.task_type.value if self.task_type else "unknown"}
         await asyncio.sleep(3)
         
-        response = self.generate_response(results)
+        try:
+            response = self.generate_response(results)
+        except Exception as e:
+            logger.error(f"生成回复失败: {e}")
+            response = "抱歉，服务暂时不可用，请稍后再试。"
         
         step = {
             "stage": "📝 回复生成",
@@ -336,7 +729,7 @@ class MultiAgentManager:
             if self.context.get("image_path"):
                 image_result = self.image_agent.analyze(
                     self.context["image_path"],
-                    self.context.get("user_symptoms")
+                    self.context.get("user_symptoms") or ""
                 )
                 results["image"] = image_result
                 self.context["diagnosis_result"] = image_result
@@ -344,94 +737,95 @@ class MultiAgentManager:
         if self.task_type != TaskType.FOLLOW_UP:
             diagnosis_info = {
                 "disease_name": results.get("image", {}).get("disease_name", ""),
-                "user_symptoms": self.context.get("user_symptoms", "")
+                "user_symptoms": self.context.get("user_symptoms", "") or ""
             }
-            treatment_result = self.treatment_agent.analyze(diagnosis_info, self.context.get("patient_info"))
+            treatment_result = self.treatment_agent.analyze(diagnosis_info, self.context.get("patient_info") or {})
             results["treatment"] = treatment_result
             self.context["treatment_result"] = treatment_result
-        
-        if self.self_verification_enabled:
-            verification = self.self_verify(results)
-            results["verification"] = verification
         
         return results
     
     
-    def self_verify(self, results: dict) -> dict:
-        """自我验证诊断结果"""
-        verification = {
-            "reliable": True,
-            "concerns": [],
-            "confidence": 0.5,
-            "suggestions": []
-        }
-        
-        if "symptom" in results:
-            extracted = results["symptom"].get("extracted_symptoms", {})
-            if not extracted.get("mentioned"):
-                verification["concerns"].append("用户未提供具体症状")
-                verification["confidence"] -= 0.2
-        
-        if "image" in results:
-            validation = results["image"].get("validation", {})
-            if not validation.get("is_reliable", True):
-                verification["reliable"] = False
-                verification["concerns"].extend(validation.get("warnings", []))
-                verification["confidence"] -= 0.3
-            
-            conf_str = results["image"].get("model_results", {}).get("classification", "")
-            if "置信度" in conf_str:
-                try:
-                    conf = float(conf_str.split("置信度：")[1].replace("%", "")) / 100
-                    verification["confidence"] = max(verification["confidence"], conf)
-                except:
-                    pass
-        
-        if "treatment" in results:
-            treatment = results["treatment"].get("treatment_plan", "")
-            emergency_check = EmergencyChecker.check_emergency(
-                self.context.get("user_symptoms", "") + treatment
-            )
-            if emergency_check.get("is_emergency"):
-                verification["reliable"] = False
-                verification["concerns"].append("发现紧急信号")
-                verification["suggestions"].append("建议立即就医")
-        
-        if verification["confidence"] < 0.5:
-            verification["suggestions"].append("建议提供更多症状信息或图像以提高诊断准确性")
-        
-        if verification["concerns"]:
-            verification["reliable"] = False
-        
-        return verification
-    
+    def _load_final_response_prompt(self) -> str:
+        prompt_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts", "final_response_prompt.txt")
+        if os.path.exists(prompt_path):
+            with open(prompt_path, "r", encoding="utf-8") as f:
+                return f.read()
+        return ""
     
     def generate_response(self, results: dict) -> str:
-        """生成最终响应"""
+        """生成最终响应 - 使用LLM根据用户问题和诊断结果生成个性化回复"""
+        
+        task_type = self.task_type.value if self.task_type else "unknown"
+        
+        prompt = self._load_final_response_prompt()
+        
+        if not prompt:
+            return self._generate_response_fallback(results)
+        
+        symptom_info = ""
+        if "symptom" in results and results.get("symptom", {}).get("analysis"):
+            symptom_info = results["symptom"]["analysis"]
+        
+        ask_for_image = "是" if results.get("ask_for_image") else "否"
+        
+        image_info = ""
+        if "image" in results and results.get("image", {}).get("diagnosis"):
+            image_info = results["image"]["diagnosis"]
+        
+        treatment_info = ""
+        if "treatment" in results and results.get("treatment", {}).get("treatment_plan"):
+            treatment_info = results["treatment"]["treatment_plan"]
+        
+        full_prompt = f"""用户问题：{self.context.get('user_symptoms', '无')}
+
+任务类型：{task_type}
+
+症状分析结果：
+{symptom_info}
+
+是否需要图像：{ask_for_image}
+
+图像诊断结果：
+{image_info}
+
+治疗建议：
+{treatment_info}
+
+请根据以上信息生成最终回复。"""
+        
+        try:
+            messages = [
+                SystemMessage(content=prompt),
+                HumanMessage(content=full_prompt)
+            ]
+            response = chat_model.invoke(messages)
+            content = response.content
+            if isinstance(content, list):
+                content = str(content[0]) if content else ""
+            return content
+        except Exception as e:
+            logger.error(f"LLM生成回复失败: {e}")
+            return self._generate_response_fallback(results)
+    
+    def _generate_response_fallback(self, results: dict) -> str:
+        """备用回复生成（当LLM不可用时）"""
         response_parts = []
         
-        if "symptom" in results:
+        if "symptom" in results and results.get("symptom", {}).get("analysis"):
             response_parts.append("【症状分析】\n" + results["symptom"]["analysis"])
         
         if "ask_for_image" in results:
             response_parts.append("\n为了更准确诊断，能否提供皮肤图像？")
         
-        if "image" in results:
+        if "image" in results and results.get("image", {}).get("diagnosis"):
             response_parts.append("\n【图像诊断】\n" + results["image"]["diagnosis"])
         
-        if "treatment" in results:
+        if "treatment" in results and results.get("treatment", {}).get("treatment_plan"):
             response_parts.append("\n【治疗建议】\n" + results["treatment"]["treatment_plan"])
         
-        if "verification" in results:
-            v = results["verification"]
-            if not v.get("reliable"):
-                response_parts.append("\n【诊断确认】")
-                response_parts.append("本诊断仅供参考，存在以下不确定因素：")
-                for concern in v.get("concerns", []):
-                    response_parts.append(f"- {concern}")
-        
-        if "image" not in results and "symptom" not in results:
-            response_parts.append(results.get("treatment", {}).get("treatment_plan", ""))
+        if not response_parts:
+            response_parts.append("抱歉，暂时无法生成诊断结果，请稍后重试。")
         
         response = "\n".join(response_parts)
         

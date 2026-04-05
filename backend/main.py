@@ -20,7 +20,6 @@ import numpy as np
 from PIL import Image
 from torchvision import transforms
 from datetime import datetime
-from ultralytics import YOLO
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -84,14 +83,22 @@ user_profiles = {
 # 对话历史
 chat_sessions = {}
 
-# 多Agent管理器
-agent_manager = None
+# 按session_id存储不同的Agent实例
+agent_managers = {}
 
-def get_agent_manager():
-    global agent_manager
-    if agent_manager is None:
-        agent_manager = MultiAgentManager()
-    return agent_manager
+def get_agent_manager(session_id: str = "default"):
+    global agent_managers
+    if session_id not in agent_managers:
+        agent_managers[session_id] = MultiAgentManager()
+    return agent_managers[session_id]
+
+def clear_agent_manager(session_id: str = None):
+    """清空Agent管理器"""
+    global agent_managers
+    if session_id and session_id in agent_managers:
+        del agent_managers[session_id]
+    elif session_id is None:
+        agent_managers = {}
 
 # 类别名称
 CLASS_NAMES = [
@@ -138,21 +145,6 @@ def load_classification_model():
 
 load_classification_model()
 
-# 加载 YOLO 模型
-yolo_model = None
-
-def load_yolo_model():
-    global yolo_model
-    try:
-        yolo_path = "E:/py项目/Skin diseases/yolo_variables/checkpoint_yolo.pt"
-        yolo_model = YOLO(yolo_path)
-        print(f"YOLO模型加载成功: {yolo_path}")
-    except Exception as e:
-        print(f"YOLO模型加载失败: {e}")
-        yolo_model = None
-
-load_yolo_model()
-
 # 图像预处理（与 agent_tools.py 一致）
 transform = transforms.Compose([
     transforms.Resize((300, 300)),
@@ -182,7 +174,6 @@ async def detect_and_classify(
 ):
     """
     图像检测与分类 API
-    - 使用 YOLO 检测皮损区域
     - 使用 CNN 分类皮肤病类型
     """
     try:
@@ -191,28 +182,6 @@ async def detect_and_classify(
             content = await image.read()
             tmp.write(content)
             tmp_path = tmp.name
-
-        # YOLO 检测
-        yolo_conf = 0.9
-        yolo_boxes = [[50, 30, 250, 230]]
-        yolo_classes = ["病变区域"]
-        
-        if yolo_model is not None:
-            try:
-                yolo_results = yolo_model(tmp_path, verbose=False)
-                if yolo_results and len(yolo_results) > 0:
-                    result_yolo = yolo_results[0]
-                    boxes = result_yolo.boxes
-                    if boxes is not None and len(boxes) > 0:
-                        yolo_boxes = boxes.xyxy[0].cpu().numpy().tolist()
-                        yolo_conf = float(boxes.conf[0].item())
-                        yolo_classes = ["病变区域"]
-                    else:
-                        yolo_conf = 0.0
-                        yolo_boxes = []
-                        yolo_classes = []
-            except Exception as e:
-                print(f"YOLO检测失败: {e}")
 
         # 使用模型进行分类
         if model is not None:
@@ -246,9 +215,6 @@ async def detect_and_classify(
             primary_prob = 0.0
         
         result = {
-            "detection_boxes": yolo_boxes,
-            "detection_classes": yolo_classes,
-            "detection_confidences": [yolo_conf],
             "cropped_regions": [tmp_path],
             "classification": {
                 "model_used": model_name,
@@ -333,49 +299,124 @@ async def chat_stream(
         })
 
         # 调用真正的 Agent 进行处理（流式）
-        agent = get_agent_manager()
+        agent = get_agent_manager(session_id)
+        
+        # 调试：打印关键信息
+        print(f"[DEBUG] session_id: {session_id}")
+        print(f"[DEBUG] chat_sessions keys: {list(chat_sessions.keys())}")
+        print(f"[DEBUG] chat_sessions[{session_id}]: {chat_sessions.get(session_id, [])}")
+        print(f"[DEBUG] session message count: {len(chat_sessions.get(session_id, []))}")
+        print(f"[DEBUG] is_new_session: {session_id not in chat_sessions or len(chat_sessions.get(session_id, [])) == 0}")
+        
+        # 检查是否为第一次对话（会话刚刚创建，且只有1条消息）
+        is_new_session = session_id not in chat_sessions or len(chat_sessions.get(session_id, [])) == 0
+        
+        if is_new_session:
+            # 新会话，初始化Agent的context
+            print("[DEBUG] 初始化Agent context（新会话）")
+            agent.context = {
+                "image_path": None,
+                "diagnosis_result": None,
+                "user_symptoms": None,
+                "conversation_history": [],
+                "patient_info": {}
+            }
+        elif not image_paths and agent.context.get("diagnosis_result"):
+            # 有历史但没有新图片，超过6条消息后重置诊断
+            history_count = len(chat_sessions.get(session_id, []))
+            if history_count > 6:
+                agent.context["diagnosis_result"] = None
+        
+        # 保存对话历史到agent的context中
+        agent.context["conversation_history"] = [
+            {"user": msg["content"], "assistant": msg.get("assistant_content", "")}
+            for msg in chat_sessions[session_id][-10:]
+            if msg["role"] == "user"
+        ]
         
         # 根据是否有图片决定处理方式
-        if not image_paths:
-            # 无图片时，直接调用知识库获取答案（简单模式）
-            rag_result = agent.rag.rag_retrieve(message)
-            answer = rag_result.get("answer", "抱歉，我无法回答您的问题。")
+        has_existing_diagnosis = agent.context.get("diagnosis_result") is not None
+        
+        # 如果没有新图片且没有之前的诊断结果，走完整Agent流程（让LLM智能回答）
+        if not image_paths and not has_existing_diagnosis:
+            full_response = []
             
-            async def generate_simple():
-                # 先发送思考提示
-                yield f"data: {json.dumps({'type': 'thinking', 'data': []})}\n\n"
-                yield f"data: {json.dumps({'type': 'tools', 'data': []})}\n\n"
-                # 流式返回答案
-                for char in answer:
-                    yield f"data: {json.dumps({'type': 'content', 'data': char})}\n\n"
-                    await asyncio.sleep(0.02)
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            async def generate_with_agent():
+                nonlocal full_response
+                async for chunk in agent.chat_with_thinking_stream(message, current_image_path=image_paths[0] if image_paths else None):
+                    if chunk["type"] == "thinking":
+                        yield f"data: {json.dumps({'type': 'thinking', 'data': chunk['data']})}\n\n"
+                    elif chunk["type"] == "tools":
+                        yield f"data: {json.dumps({'type': 'tools', 'data': chunk['data']})}\n\n"
+                    elif chunk["type"] == "content":
+                        full_response.append(chunk['data'])
+                        for char in chunk['data']:
+                            yield f"data: {json.dumps({'type': 'content', 'data': char})}\n\n"
+                            await asyncio.sleep(0.02)
+                    elif chunk["type"] == "done":
+                        yield f"data: {json.dumps({'type': 'done'})}\n\n"
             
-            return StreamingResponse(generate_simple(), media_type="text/event-stream")
+            return StreamingResponse(generate_with_agent(), media_type="text/event-stream")
         
         # 有图片时，使用完整Agent推理流程
-        image_result = agent.image_agent.analyze(image_paths[0], message)
-        agent.context["image_path"] = image_paths[0]
-        agent.context["diagnosis_result"] = image_result
+        if image_paths:
+            image_result = agent.image_agent.analyze(image_paths[0], message)
+            agent.context["image_path"] = image_paths[0]
+            agent.context["diagnosis_result"] = image_result
+        
+        full_response = []
         
         async def generate():
+            nonlocal full_response
             # 完整Agent流程
-            async for chunk in agent.chat_with_thinking_stream(message):
+            async for chunk in agent.chat_with_thinking_stream(message, current_image_path=image_paths[0] if image_paths else None):
                 if chunk["type"] == "thinking":
                     yield f"data: {json.dumps({'type': 'thinking', 'data': chunk['data']})}\n\n"
                 elif chunk["type"] == "tools":
                     yield f"data: {json.dumps({'type': 'tools', 'data': chunk['data']})}\n\n"
                 elif chunk["type"] == "content":
+                    full_response.append(chunk['data'])
                     for char in chunk['data']:
                         yield f"data: {json.dumps({'type': 'content', 'data': char})}\n\n"
                         await asyncio.sleep(0.02)
                 elif chunk["type"] == "done":
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
-
+                    
+                    # 保存对话诊断结果到历史记录
+                    diagnosis_result = agent.context.get("diagnosis_result")
+                    if diagnosis_result:
+                        disease = diagnosis_result.get("disease_name", "")
+                        confidence = diagnosis_result.get("model_results", {}).get("classification", "")
+                        if disease:
+                            record = {
+                                "id": len(diagnosis_history) + 1,
+                                "image_name": diagnosis_result.get("image_name", "智能对话"),
+                                "result": f"{disease} ({confidence[:50] if confidence else 'AI诊断'})",
+                                "timestamp": datetime.now().isoformat(),
+                                "source": "chat"
+                            }
+                            diagnosis_history.append(record)
+            
+            # 流式结束后更新对话历史
+            if agent.context.get("conversation_history") and full_response:
+                if len(agent.context["conversation_history"]) > 0:
+                    agent.context["conversation_history"][-1]["assistant"] = "".join(full_response)
+        
         return StreamingResponse(generate(), media_type="text/event-stream")
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"对话失败: {str(e)}")
+        import traceback
+        print(f"对话处理错误: {e}")
+        print(traceback.format_exc())
+        
+        async def generate_error():
+            yield f"data: {json.dumps({'type': 'thinking', 'data': []})}\n\n"
+            yield f"data: {json.dumps({'type': 'tools', 'data': []})}\n\n"
+            error_msg = "抱歉，服务暂时不可用，请稍后重试。"
+            yield f"data: {json.dumps({'type': 'content', 'data': error_msg})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        
+        return StreamingResponse(generate_error(), media_type="text/event-stream")
 
 
 @app.post("/api/chat")
@@ -397,10 +438,22 @@ async def chat(request: ChatRequest):
             "content": request.message,
             "timestamp": datetime.now().isoformat()
         })
-
+        
         # 调用真正的 Agent 进行处理
         agent = get_agent_manager()
+        
+        # 保存对话历史到agent的context中
+        agent.context["conversation_history"] = [
+            {"user": msg["content"], "assistant": ""}
+            for msg in chat_sessions[session_id][-10:] if msg["role"] == "user"
+        ]
+        
         response_text = agent.chat(request.message)
+        
+        # 更新对话历史，添加AI的回复
+        if agent.context.get("conversation_history"):
+            if len(agent.context["conversation_history"]) > 0:
+                agent.context["conversation_history"][-1]["assistant"] = response_text
         
         reasoning_steps = [
             {"step": "理解问题", "content": "分析用户描述的皮肤症状和相关需求"},
@@ -443,6 +496,8 @@ async def clear_chat_history(session_id: str = "default"):
     """清空对话历史"""
     if session_id in chat_sessions:
         chat_sessions[session_id] = []
+    # 删除对应的Agent实例
+    clear_agent_manager(session_id)
     return {"message": "对话历史已清空"}
 
 

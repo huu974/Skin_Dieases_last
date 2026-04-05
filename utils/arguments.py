@@ -82,57 +82,6 @@ def parse():
 
 
 
-def parse_yolo():
-    parser = argparse.ArgumentParser(description="YOLOv10 Detection")
-
-    parser.add_argument('--save-path', default='./yolo_variables', type=str)
-    parser.add_argument('--model-size', default='n', type=str)
-    parser.add_argument('--epochs', default=100, type=int)
-    parser.add_argument('--batch-size', default=16, type=int)
-    parser.add_argument('--lr0', default=1e-3, type=float)
-    parser.add_argument('--imgsz', default=640, type=int)
-    parser.add_argument('--data-yaml', default='config/yolo_data.yml', type=str)
-    parser.add_argument('--yolo-data-yaml', default='config/yolo_data.yml', type=str)
-    parser.add_argument('--yolo-resume', default='', type=str)
-    parser.add_argument('--yolo-freeze', default=0, type=int)
-    parser.add_argument('--yolo-lora', default=False, type=bool)
-    parser.add_argument('--lora-r', default=8, type=int)
-    parser.add_argument('--lora-alpha', default=16, type=int)
-    parser.add_argument('--lora-dropout', default=0.1, type=float)
-
-    opts = parser.parse_args()
-
-    with open('config/yolov10.yml', 'r', encoding='utf-8') as f:
-        yaml_dict = yaml.load(f, Loader=yaml.FullLoader)
-
-    opts.__dict__.update(yaml_dict)
-
-    for i, arg in enumerate(sys.argv):
-        if arg.startswith('--'):
-            if '=' in arg:
-                key, value = arg.split('=', 1)
-            else:
-                key = arg
-                value = sys.argv[i + 1] if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith('--') else True
-
-            key = key.replace('--', '').replace('-', '_')
-
-            if key in opts.__dict__:
-                original_type = type(yaml_dict.get(key, opts.__dict__.get(key)))
-                try:
-                    opts.__dict__[key] = original_type(value)
-                except:
-                    opts.__dict__[key] = value
-
-    return opts
-
-
-
-
-
-
-
-
 
 
 

@@ -46,6 +46,17 @@ class TreatmentAdviceAgent:
         
         rag_result = self.rag.rag_retrieve(query)
         
+        # 检查RAG结果是否有效
+        rag_answer = rag_result.get("answer", "")
+        if not rag_answer or "未找到相关知识" in rag_answer:
+            # 没有检索到知识时，直接用通用治疗建议
+            default_treatment = self._generate_default_treatment(disease, symptoms)
+            return {
+                "treatment_plan": default_treatment,
+                "rag_result": {},
+                "sources": {}
+            }
+        
         prompt = f"""请为以下情况提供治疗建议：
 
 疾病诊断：{disease}
@@ -54,7 +65,7 @@ class TreatmentAdviceAgent:
 
 患者信息：{json.dumps(patient_info, ensure_ascii=False) if patient_info else '未提供'}
 
-参考知识：{rag_result['answer'][:800]}
+参考知识：{rag_answer[:800]}
 
 请提供简洁的治疗建议，包括治疗方案、日常护理、饮食注意事项、预警信号和复查建议。
 注意：不要使用任何列表格式（如1. 2. 或-）或emoji符号，用连贯的自然段落描述。
@@ -72,6 +83,16 @@ class TreatmentAdviceAgent:
             "rag_result": rag_result,
             "sources": rag_result.get("source_tracing", {})
         }
+    
+    
+    def _generate_default_treatment(self, disease: str, symptoms: str) -> str:
+        """生成默认治疗建议（当没有检索到知识时）"""
+        base_info = f"根据您提供的诊断（{disease}），"
+        
+        if "血管炎" in disease:
+            return base_info + """建议如下：治疗方面，医生可能会根据病情严重程度使用糖皮质激素（如泼尼松）来控制炎症，必要时可能联合使用免疫抑制剂。日常护理方面，请注意休息、避免感染、保持皮肤清洁、戒烟。有皮损的部位要避免搔抓，防止继发感染。如果出现新发皮疹、呼吸困难、血尿、视力变化或肢体麻木等异常情况，请立即就医。定期复查血常规、尿常规和炎症指标有助于监测病情变化。具体用药请遵医嘱。"""
+        else:
+            return base_info + "建议您尽快到正规医院皮肤科或相应专科就诊，进行详细检查和规范化治疗。日常注意休息、保持皮肤清洁、避免刺激。"
 
 
 
